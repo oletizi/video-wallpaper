@@ -1,3 +1,41 @@
+# Video Wallpaper Generator (Daedalus Howell & Co.)
+
+## Project Overview
+This platform transforms long-form audio (e.g., podcast or radio show episodes) into YouTube-ready video content. Instead of static cover art, each upload generates bespoke, ambient "visual wallpaper"—subtle, slow-moving imagery that's optionally responsive to audio. Brand assets—logo intro, title card, lower-thirds, and end-screen—are overlaid automatically.
+
+## Features
+- Upload audio (WAV/MP3 ≤ 250 MB)
+- Optional episode metadata (title, guest, summary)
+- Optional branding assets (logo, sponsor bug)
+- AI-generated visuals from style presets
+- 1080p MP4 @ 30fps output
+- Light audio-reactivity (pulse, color shift, drift)
+- Automated overlays: logo intro, lower-thirds, title card, end screen
+- Library of 3+ style presets (French New Wave, '80s Retro Chromatic, Wine-Country Dreamscape)
+- Preview and approve short video clips
+- Download or publish to YouTube
+
+## Getting Started
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Start the development server:
+   ```bash
+   npm run dev
+   ```
+3. Open [http://localhost:4321](http://localhost:4321) in your browser.
+
+## Roadmap
+- Audio analysis and keyframe generation
+- AI-driven video wallpaper rendering
+- Overlay automation
+- YouTube integration
+- Render logs and documentation
+
+## License
+See LICENSE file.
+
 # Astro Starter Kit: Minimal
 
 ```sh

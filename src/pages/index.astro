@@ -1,16 +1,48 @@
 ---
-
+// TypeScript support enabled
 ---
-
 <html lang="en">
 	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Video Wallpaper Generator</title>
 	</head>
-	<body>
-		<h1>Astro</h1>
+	<body style="font-family: system-ui, sans-serif; background: #18181b; color: #fff; margin: 0;">
+		<main style="max-width: 600px; margin: 3rem auto; padding: 2rem; background: #23232a; border-radius: 1rem; box-shadow: 0 2px 16px #0002;">
+			<h1 style="font-size: 2.5rem; margin-bottom: 0.5em;">Video Wallpaper Generator</h1>
+			<p style="font-size: 1.2rem; margin-bottom: 2em;">
+				Transform your podcast or radio show audio into YouTube-ready video with evolving, ambient visuals and automated branding overlays.
+			</p>
+			<ol style="margin-bottom: 2em;">
+				<li>Upload your audio file (WAV/MP3, ≤ 250 MB)</li>
+				<li>Enter episode details (optional)</li>
+				<li>Select a visual style preset</li>
+				<li>Preview a 15-second sample</li>
+				<li>Approve or regenerate</li>
+				<li>Render and download your full video</li>
+			</ol>
+			<form style="display: flex; flex-direction: column; gap: 1.5em;">
+				<label>
+					<strong>Audio File</strong>
+					<input type="file" accept="audio/wav,audio/mp3" style="margin-top: 0.5em;" />
+				</label>
+				<label>
+					<strong>Episode Title</strong>
+					<input type="text" placeholder="Optional" style="margin-top: 0.5em; width: 100%;" />
+				</label>
+				<label>
+					<strong>Style Preset</strong>
+					<select style="margin-top: 0.5em; width: 100%;">
+						<option>French New Wave</option>
+						<option>'80s Retro Chromatic</option>
+						<option>Wine-Country Dreamscape</option>
+					</select>
+				</label>
+				<button type="button" style="padding: 0.75em 2em; font-size: 1.1em; background: #6366f1; color: #fff; border: none; border-radius: 0.5em; cursor: pointer;">Preview Sample</button>
+			</form>
+			<div style="margin-top: 2em; color: #aaa; font-size: 0.95em;">
+				<p><em>Note: This is an MVP prototype. Video rendering and AI visuals are not yet implemented.</em></p>
+			</div>
+		</main>
 	</body>
 </html>

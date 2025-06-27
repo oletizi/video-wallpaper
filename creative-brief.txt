@@ -1,0 +1,174 @@
+1. Project Overview
+Daedalus Howell & Co. requires an automated platform that transforms long-form audio (e.g., podcast or radio show episodes) into YouTube-ready video content. Instead of static cover art, each upload should generate bespoke, ambient “visual wallpaper”—subtle, slow-moving imagery that’s optionally responsive to audio. This keeps viewer attention while respecting the primary focus: the audio. Brand assets—logo intro, title card, lower-thirds, and end-screen—should be overlaid automatically.
+
+2. Core Objectives
+
+Automate video creation from audio uploads
+
+Enhance viewer retention with evolving, low-distraction visuals
+
+Embed brand identity through consistent overlays
+
+Generate unique visual IP for each episode
+
+3. Functional Requirements
+
+Input:
+
+Accept WAV/MP3 files (≤ 250 MB)
+
+Optional episode metadata (title, guest, summary)
+
+Optional branding assets (logo, sponsor bug)
+
+Processing:
+
+Generate visuals from a style preset using AI
+
+Render 1080p MP4 @ 30fps
+
+Light audio-reactivity: pulse, color shift, drift
+
+Overlay/Branding:
+
+5-second animated logo intro
+
+Lower-thirds every ~10 minutes
+
+Title card at start
+
+End screen with CTA and sponsor slot
+
+Style Selection:
+
+Library of 3+ style presets
+
+Choose preset per episode
+
+Output:
+
+Final MP4
+
+Matching thumbnail JPG (e.g., from 00:05 timestamp)
+
+Optional: caption support, YouTube integration
+
+4. User Workflow
+
+Upload audio file and optional metadata
+
+Select style preset
+
+Preview short video clip (15 sec sample)
+
+Approve or regenerate
+
+Render full video
+
+Download or publish to YouTube
+
+5. Initial Style Presets
+
+1. French New Wave
+
+Black & white jump cuts, freeze frames, grainy film look
+
+Muted colors or high-contrast B/W
+
+Zooms and cuts synced with vocal energy
+
+2. ’80s Retro Chromatic
+
+Neon gridlines, VHS textures, synthwave aesthetic
+
+Magenta/cyan palettes
+
+Audio triggers slight jitter or VHS flicker
+
+3. Wine-Country Dreamscape
+
+Abstract vineyards, painterly textures, soft camera drifts
+
+Warm terracotta and gold
+
+Gentle transitions and bloom on vocal peaks
+
+6. Branding Elements
+
+Logo intro (MOV, 1080p, alpha channel)
+
+Lower-third ID template (semi-transparent bar, Source Sans Pro)
+
+Title card with episode name
+
+End-screen with CTA and sponsor placement
+
+All overlays should respect YouTube-safe UI margins (≥90px)
+
+7. Technical Notes
+
+Use latent diffusion video model with audio-reactive conditioning
+
+Render pipeline includes:
+
+Audio analysis (RMS, silence, frequency)
+
+Keyframe generation
+
+Interpolation for 30fps
+
+FFmpeg overlay pass
+
+Final file size should be <1 GB/hour
+
+8. Deliverables
+
+MVP platform (web app or desktop tool)
+
+3 launch-ready visual style presets
+
+Overlay template kit
+
+Render log per video (seed, params)
+
+Documentation (API, setup, style formats)
+
+9. Success Metrics
+
++25% watch time vs. static-image baseline
+
+≥95% successful renders
+
+<10 minutes total user input time per episode
+
+Viewer like:dislike ratio ≥ 4:1 on visual presentation
+
+10. Timeline (Indicative)
+
+Week 1: Spec & architecture
+
+Week 2–4: Prototype (30-sec sample from audio)
+
+Week 5–6: Build presets and overlay automation
+
+Week 7–8: Beta test with 5 episodes
+
+Week 9: Launch polish & go live
+
+11. Creative Guardrails
+
+Visuals must support the audio, not distract
+
+No strobe or high-frequency motion
+
+Optional humorous text cards allowed
+
+Must comply with YouTube’s monetization-friendly visual standards
+
+12. Open Engineering Questions
+
+Preferred model base (e.g., Stable Video Diffusion, Runway, Pika)?
+
+Cloud GPU rendering or in-house resources?
+
+Is multi-language text support needed in the first release?
