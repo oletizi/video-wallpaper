@@ -5,6 +5,20 @@
 [build.environment]
   NODE_VERSION = "18"
 
+# Serve audio files directly from the public directory
+[[redirects]]
+  from = "/test-audio-5sec.mp3"
+  to = "/test-audio-5sec.mp3"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/test-audio-short.mp3"
+  to = "/test-audio-short.mp3"
+  status = 200
+  force = true
+
+# Catch-all redirect for SPA routing
 [[redirects]]
   from = "/*"
   to = "/index.html"
