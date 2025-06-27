@@ -294,60 +294,81 @@
 				async analyzeAudio(audioFile: File): Promise<any> {
 					console.log('Analyzing audio in browser...');
 					
-					// Create audio context
-					this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-					
-					// Resume audio context if suspended (required for autoplay policies)
-					if (this.audioContext.state === 'suspended') {
-						await this.audioContext.resume();
-					}
-					
-					// Load audio file
-					const arrayBuffer = await audioFile.arrayBuffer();
-					const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
-					
-					// Extract audio data
-					const channelData = audioBuffer.getChannelData(0);
-					this.audioData = channelData;
-					this.sampleRate = audioBuffer.sampleRate;
-					
-					// Calculate RMS values with more granular segments
-					const fps = 30;
-					const totalFrames = Math.floor(audioBuffer.duration * fps);
-					const rmsValues = [];
-					const vocalEnergy = [];
-					const frequencies = [];
-					
-					// Create one RMS value per frame for better synchronization
-					for (let frame = 0; frame < totalFrames; frame++) {
-						const startTime = frame / fps;
-						const endTime = (frame + 1) / fps;
+					try {
+						// Create audio context
+						this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
 						
-						const startSample = Math.floor(startTime * this.sampleRate);
-						const endSample = Math.floor(endTime * this.sampleRate);
-						
-						let sum = 0;
-						let count = 0;
-						
-						for (let i = startSample; i < endSample && i < channelData.length; i++) {
-							sum += channelData[i] * channelData[i];
-							count++;
+						// Resume audio context if suspended (required for autoplay policies)
+						if (this.audioContext.state === 'suspended') {
+							await this.audioContext.resume();
 						}
 						
-						const rms = count > 0 ? Math.sqrt(sum / count) : 0.1;
-						rmsValues.push(rms);
-						vocalEnergy.push(Math.min(1, rms * 2));
-						frequencies.push(150 + 100 * Math.sin(startTime * 2)); // Varying frequency
+						// Load audio file
+						console.log('Loading audio file, size:', audioFile.size, 'type:', audioFile.type);
+						const arrayBuffer = await audioFile.arrayBuffer();
+						console.log('Audio file loaded as ArrayBuffer, size:', arrayBuffer.byteLength);
+						
+						const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+						console.log('Audio decoded successfully, duration:', audioBuffer.duration, 'sampleRate:', audioBuffer.sampleRate);
+						
+						// Extract audio data
+						const channelData = audioBuffer.getChannelData(0);
+						this.audioData = channelData;
+						this.sampleRate = audioBuffer.sampleRate;
+						
+						// Calculate RMS values with more granular segments
+						const fps = 30;
+						const totalFrames = Math.floor(audioBuffer.duration * fps);
+						const rmsValues = [];
+						const vocalEnergy = [];
+						const frequencies = [];
+						
+						// Create one RMS value per frame for better synchronization
+						for (let frame = 0; frame < totalFrames; frame++) {
+							const startTime = frame / fps;
+							const endTime = (frame + 1) / fps;
+							
+							const startSample = Math.floor(startTime * this.sampleRate);
+							const endSample = Math.floor(endTime * this.sampleRate);
+							
+							let sum = 0;
+							let count = 0;
+							
+							for (let i = startSample; i < endSample && i < channelData.length; i++) {
+								sum += channelData[i] * channelData[i];
+								count++;
+							}
+							
+							const rms = count > 0 ? Math.sqrt(sum / count) : 0.1;
+							rmsValues.push(rms);
+							vocalEnergy.push(Math.min(1, rms * 2));
+							frequencies.push(150 + 100 * Math.sin(startTime * 2)); // Varying frequency
+						}
+						
+						return {
+							duration: audioBuffer.duration,
+							rms: rmsValues,
+							vocalEnergy: vocalEnergy,
+							frequencies: frequencies,
+							sampleRate: this.sampleRate,
+							totalFrames: totalFrames
+						};
+					} catch (error) {
+						console.error('Error in analyzeAudio:', error);
+						
+						// Provide more specific error messages
+						if (error instanceof Error) {
+							if (error.message.includes('decodeAudioData')) {
+								throw new Error('Unable to decode audio data. The file may be corrupted or in an unsupported format.');
+							} else if (error.message.includes('AudioContext')) {
+								throw new Error('Audio context creation failed. Please check your browser audio settings.');
+							} else {
+								throw new Error(`Audio analysis failed: ${error.message}`);
+							}
+						} else {
+							throw new Error('Unknown error during audio analysis');
+						}
 					}
-					
-					return {
-						duration: audioBuffer.duration,
-						rms: rmsValues,
-						vocalEnergy: vocalEnergy,
-						frequencies: frequencies,
-						sampleRate: this.sampleRate,
-						totalFrames: totalFrames
-					};
 				}
 
 				generateFrame(time: number, audioAnalysis: any, stylePreset: string): void {
@@ -1146,20 +1167,61 @@
 				console.log('Loading pre-built test audio file...');
 				
 				try {
-					// Fetch the test audio file from the public directory
-					const response = await fetch('/test-audio-5sec.mp3');
-					if (!response.ok) {
-						throw new Error(`Failed to load test audio file: ${response.status}`);
+					// Try multiple possible paths for the audio file
+					const possiblePaths = [
+						'/test-audio-5sec.mp3',
+						'./test-audio-5sec.mp3',
+						'test-audio-5sec.mp3'
+					];
+					
+					let response: Response | null = null;
+					let audioBlob: Blob | null = null;
+					
+					for (const path of possiblePaths) {
+						try {
+							console.log(`Trying to fetch audio file from: ${path}`);
+							response = await fetch(path);
+							console.log(`Response status for ${path}:`, response.status);
+							
+							if (response.ok) {
+								audioBlob = await response.blob();
+								console.log(`Successfully loaded audio file from ${path}, size:`, audioBlob.size);
+								break;
+							}
+						} catch (pathError) {
+							console.warn(`Failed to fetch from ${path}:`, pathError);
+							continue;
+						}
 					}
 					
-					const audioBlob = await response.blob();
+					if (!audioBlob) {
+						throw new Error('Could not load test audio file from any path');
+					}
+					
+					// Verify the blob is actually an audio file
+					if (audioBlob.size === 0) {
+						throw new Error('Audio file is empty');
+					}
+					
+					if (!audioBlob.type.includes('audio') && !audioBlob.type.includes('mp3')) {
+						console.warn('Blob type is not audio:', audioBlob.type);
+					}
+					
 					cachedTestAudioFile = new File([audioBlob], 'test-audio-5sec.mp3', { type: 'audio/mp3' });
-					console.log('Test audio file loaded and cached');
+					console.log('Test audio file loaded and cached successfully');
 					
 					return cachedTestAudioFile;
 				} catch (error) {
 					console.error('Error loading test audio file:', error);
-					throw new Error('Failed to load test audio file. Please try again.');
+					
+					// Provide more specific error messages
+					if (error instanceof TypeError && error.message.includes('fetch')) {
+						throw new Error('Network error loading audio file. Please check your connection.');
+					} else if (error instanceof Error && error.message.includes('404')) {
+						throw new Error('Audio file not found. Please contact support.');
+					} else {
+						throw new Error(`Failed to load test audio file: ${error instanceof Error ? error.message : String(error)}`);
+					}
 				}
 			}
 		</script>
