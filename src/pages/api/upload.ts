@@ -1,9 +1,16 @@
 import type { APIRoute } from 'astro';
 import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
+import { randomUUID } from 'crypto';
 import { AudioAnalyzer } from '../../lib/audio-analyzer';
 import { VideoGenerator } from '../../lib/video-generator';
 import { OverlayGenerator } from '../../lib/overlay-generator';
+import { writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+
+function getResultFilePath(jobId: string) {
+  return `${tmpdir()}/vw_result_${jobId}.json`;
+}
 
 export const POST: APIRoute = async ({ request }) => {
   try {
@@ -46,48 +53,87 @@ export const POST: APIRoute = async ({ request }) => {
     const audioPath = join(uploadsDir, `audio_${Date.now()}.${audioFile.name.split('.').pop()}`);
     await writeFile(audioPath, Buffer.from(audioBuffer));
 
-    // Analyze audio
-    const audioAnalyzer = new AudioAnalyzer();
-    const audioAnalysis = await audioAnalyzer.analyzeAudio(audioPath);
+    // Generate a jobId for progress tracking
+    const jobId = randomUUID();
 
-    // Generate video
-    const videoGenerator = new VideoGenerator();
-    const tempVideoPath = join(uploadsDir, `video_${Date.now()}.mp4`);
-    const videoPath = await videoGenerator.generateVideo(
-      audioPath,
-      tempVideoPath,
-      stylePreset,
-      audioAnalysis
-    );
+    // Create progress file immediately for polling
+    const progressFile = `${tmpdir()}/vw_progress_${jobId}.txt`;
+    writeFileSync(progressFile, `0/1`); // Placeholder, will be updated in video generation
 
-    // Add overlays
-    const overlayGenerator = new OverlayGenerator();
-    const finalVideoPath = join(uploadsDir, `final_${Date.now()}.mp4`);
-    await overlayGenerator.addOverlays(videoPath, finalVideoPath, {
-      title: title || 'Untitled Episode',
-      guest,
-      sponsor,
-      duration: audioAnalysis.duration,
-      width: 1920,
-      height: 1080
+    // Start processing in the background
+    setImmediate(async () => {
+      try {
+        console.log(`[DEBUG] [${jobId}] Background job started`);
+        // Analyze audio
+        const audioAnalyzer = new AudioAnalyzer();
+        console.log(`[DEBUG] [${jobId}] Starting audio analysis`);
+        const audioAnalysis = await audioAnalyzer.analyzeAudio(audioPath);
+        console.log(`[DEBUG] [${jobId}] Audio analysis complete`);
+
+        // Generate video
+        const videoGenerator = new VideoGenerator();
+        const tempVideoPath = join(uploadsDir, `video_${Date.now()}.mp4`);
+        console.log(`[DEBUG] [${jobId}] Starting video generation`);
+        const videoPath = await videoGenerator.generateVideo(
+          audioPath,
+          tempVideoPath,
+          stylePreset,
+          audioAnalysis,
+          jobId
+        );
+        console.log(`[DEBUG] [${jobId}] Video generation complete: ${videoPath}`);
+
+        // Add overlays
+        const overlayGenerator = new OverlayGenerator();
+        const finalVideoPath = join(uploadsDir, `final_${Date.now()}.mp4`);
+        console.log(`[DEBUG] [${jobId}] Starting overlay generation`);
+        await overlayGenerator.addOverlays(videoPath, finalVideoPath, {
+          title: title || 'Untitled Episode',
+          guest,
+          sponsor,
+          duration: audioAnalysis.duration,
+          width: 1920,
+          height: 1080
+        });
+        console.log(`[DEBUG] [${jobId}] Overlay generation complete: ${finalVideoPath}`);
+
+        // Generate thumbnail
+        const thumbnailPath = join(uploadsDir, `thumbnail_${Date.now()}.jpg`);
+        console.log(`[DEBUG] [${jobId}] Starting thumbnail generation`);
+        await overlayGenerator.generateThumbnail(finalVideoPath, thumbnailPath);
+        console.log(`[DEBUG] [${jobId}] Thumbnail generation complete: ${thumbnailPath}`);
+
+        // Store result for later retrieval
+        console.log(`[DEBUG] [${jobId}] Writing result file`);
+        writeFileSync(getResultFilePath(jobId), JSON.stringify({
+          success: true,
+          videoPath: finalVideoPath,
+          thumbnailPath,
+          duration: audioAnalysis.duration,
+          jobId,
+          analysis: {
+            rms: audioAnalysis.rms.slice(0, 100),
+            vocalEnergy: audioAnalysis.vocalEnergy.slice(0, 100),
+            silence: audioAnalysis.silence.slice(0, 100)
+          }
+        }));
+        console.log(`[DEBUG] [${jobId}] Result file written`);
+      } catch (error) {
+        console.error(`[ERROR] [${jobId}] Failed to process upload:`, (error as any)?.stack || error);
+        writeFileSync(getResultFilePath(jobId), JSON.stringify({
+          error: 'Failed to process upload',
+          details: error instanceof Error ? (error.stack || error.message) : String(error),
+          jobId
+        }));
+      }
     });
 
-    // Generate thumbnail
-    const thumbnailPath = join(uploadsDir, `thumbnail_${Date.now()}.jpg`);
-    await overlayGenerator.generateThumbnail(finalVideoPath, thumbnailPath);
-
+    // Respond immediately with jobId
     return new Response(JSON.stringify({
       success: true,
-      videoPath: finalVideoPath,
-      thumbnailPath,
-      duration: audioAnalysis.duration,
-      analysis: {
-        rms: audioAnalysis.rms.slice(0, 100), // Sample for preview
-        vocalEnergy: audioAnalysis.vocalEnergy.slice(0, 100),
-        silence: audioAnalysis.silence.slice(0, 100)
-      }
+      jobId
     }), {
-      status: 200,
+      status: 202,
       headers: { 'Content-Type': 'application/json' }
     });
 

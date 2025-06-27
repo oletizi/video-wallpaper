@@ -1,8 +1,9 @@
 import { spawn } from 'child_process';
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { AudioAnalysis, AudioSegment } from './audio-analyzer';
 import { createCanvas } from 'canvas';
+import { tmpdir } from 'os';
 
 export interface StylePreset {
   name: string;
@@ -22,6 +23,23 @@ export interface VideoConfig {
   duration: number;
   stylePreset: StylePreset;
   audioAnalysis: AudioAnalysis;
+}
+
+export function getFrameProgress(jobId: string): { currentFrame: number, totalFrames: number } | null {
+  const progressFile = getProgressFilePath(jobId);
+  if (!existsSync(progressFile)) return null;
+  try {
+    const [current, total] = readFileSync(progressFile, 'utf-8').split('/').map(Number);
+    console.log(`[DEBUG] Read progress for job ${jobId}: ${current}/${total}`);
+    return { currentFrame: current, totalFrames: total };
+  } catch (e) {
+    console.log(`[DEBUG] Failed to read progress for job ${jobId}:`, e);
+    return null;
+  }
+}
+
+function getProgressFilePath(jobId: string) {
+  return `${tmpdir()}/vw_progress_${jobId}.txt`;
 }
 
 export class VideoGenerator {
@@ -62,7 +80,8 @@ export class VideoGenerator {
     audioPath: string,
     outputPath: string,
     stylePresetName: string,
-    audioAnalysis: AudioAnalysis
+    audioAnalysis: AudioAnalysis,
+    jobId?: string
   ): Promise<string> {
     const preset = this.presets.find(p => p.name === stylePresetName);
     if (!preset) {
@@ -85,7 +104,7 @@ export class VideoGenerator {
     }
 
     // Generate frames
-    await this.generateFrames(config, framesDir);
+    await this.generateFrames(config, framesDir, jobId);
 
     // Compile video with audio
     const finalVideoPath = await this.compileVideo(framesDir, audioPath, outputPath, config);
@@ -93,7 +112,7 @@ export class VideoGenerator {
     return finalVideoPath;
   }
 
-  private async generateFrames(config: VideoConfig, framesDir: string): Promise<void> {
+  private async generateFrames(config: VideoConfig, framesDir: string, jobId?: string): Promise<void> {
     const { width, height, fps, duration, stylePreset, audioAnalysis } = config;
     const totalFrames = Math.floor(duration * fps);
     const frameInterval = 1 / fps;
@@ -110,6 +129,16 @@ export class VideoGenerator {
       if (frameIndex % 30 === 0) {
         console.log(`Generated frame ${frameIndex}/${totalFrames}`);
       }
+      if (jobId) {
+        const progressFile = getProgressFilePath(jobId);
+        writeFileSync(progressFile, `${frameIndex}/${totalFrames}`);
+        console.log(`[DEBUG] Wrote progress for job ${jobId}: ${frameIndex}/${totalFrames}`);
+      }
+    }
+    if (jobId) {
+      const progressFile = getProgressFilePath(jobId);
+      writeFileSync(progressFile, `${totalFrames}/${totalFrames}`);
+      console.log(`[DEBUG] Wrote progress for job ${jobId}: ${totalFrames}/${totalFrames}`);
     }
   }
 

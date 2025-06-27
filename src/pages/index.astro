@@ -111,6 +111,7 @@
 				<div id="progress" style="margin-top: 1em;">
 					<div id="progressBar" style="width: 0%; height: 20px; background: #6366f1; border-radius: 10px; transition: width 0.3s;"></div>
 				</div>
+				<div id="frameCountIndicator" style="margin-top: 0.5em; color: #aaa;"></div>
 			</div>
 
 			<div id="results" style="margin-top: 2em; display: none;">
@@ -142,9 +143,14 @@
 			const videoInfo = document.getElementById('videoInfo') as HTMLDivElement;
 			const downloadBtn = document.getElementById('downloadBtn') as HTMLButtonElement;
 			const youtubeBtn = document.getElementById('youtubeBtn') as HTMLButtonElement;
+			const frameCountIndicator = document.createElement('div');
+			frameCountIndicator.style.marginTop = '0.5em';
+			frameCountIndicator.style.color = '#aaa';
+			status.appendChild(frameCountIndicator);
 
 			let currentVideoPath: string = '';
 			let currentVideoUrl: string = '';
+			let currentJobId: string = '';
 
 			// File validation
 			fileInput.addEventListener('change', (e) => {
@@ -195,11 +201,23 @@
 					const result = await response.json();
 					if (!result.success) throw result.error || 'Unknown error';
 
-					currentVideoPath = result.videoPath;
-					currentVideoUrl = result.videoPath.replace(process.cwd(), '').replace(/^\/+/, '/');
+					currentJobId = result.jobId;
+					currentVideoPath = '';
+					currentVideoUrl = '';
 
-					// Show results
-					showResults(result);
+					// Poll for frame progress
+					await pollFrameProgress(currentJobId);
+
+					// Poll for job result
+					const jobResult = await pollJobResult(currentJobId);
+					if (jobResult.success) {
+						currentVideoPath = jobResult.videoPath;
+						currentVideoUrl = jobResult.videoPath.replace(process.cwd(), '').replace(/^\/+/, '/');
+						showResults(jobResult);
+					} else {
+						statusText.textContent = `Error: ${jobResult.error || 'Unknown error'}`;
+						statusText.style.color = '#ef4444';
+					}
 				} catch (error) {
 					statusText.textContent = `Error: ${error}`;
 					statusText.style.color = '#ef4444';
@@ -263,6 +281,42 @@
 					alert(`Upload error: ${error}`);
 				}
 			});
+
+			async function pollFrameProgress(jobId: string) {
+				statusText.textContent = 'Generating video frames...';
+				progressBar.style.width = '0%';
+				frameCountIndicator.textContent = '';
+				let done = false;
+				while (!done) {
+					await new Promise(resolve => setTimeout(resolve, 1000));
+					const res = await fetch(`/api/progress?jobId=${encodeURIComponent(jobId)}`);
+					if (res.ok) {
+						const { currentFrame, totalFrames } = await res.json();
+						frameCountIndicator.textContent = `Frames generated: ${currentFrame} / ${totalFrames}`;
+						progressBar.style.width = `${(currentFrame / totalFrames) * 100}%`;
+						if (currentFrame >= totalFrames) {
+							done = true;
+							statusText.textContent = 'Processing complete!';
+							statusText.style.color = '#10b981';
+							progressBar.style.width = '100%';
+						}
+					} else {
+						frameCountIndicator.textContent = 'Waiting for progress...';
+					}
+				}
+			}
+
+			async function pollJobResult(jobId: string) {
+				let result = null;
+				while (!result) {
+					await new Promise(resolve => setTimeout(resolve, 1000));
+					const res = await fetch(`/api/job-result?jobId=${encodeURIComponent(jobId)}`);
+					if (res.status === 200) {
+						result = await res.json();
+					}
+				}
+				return result;
+			}
 		</script>
 	</body>
 </html>

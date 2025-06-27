@@ -121,24 +121,9 @@ export class OverlayGenerator {
   }
 
   private buildFilterComplex(overlays: OverlayElement[], config: OverlayConfig): string {
+    // Build a comma-separated list of drawtext filters for FFmpeg
     const { width, height } = config;
-    const filters: string[] = [];
-    const inputs: string[] = ['0:v']; // Main video input
-
-    overlays.forEach((overlay, index) => {
-      const overlayIndex = index + 1;
-      
-      // Create text overlay
-      const textFilter = this.createTextFilter(overlay, width, height);
-      filters.push(`[${overlayIndex}:v]${textFilter}[text${overlayIndex}]`);
-      inputs.push(`-f lavfi -i "color=black:${width}x${height}:d=1"`);
-    });
-
-    // Combine all overlays
-    const overlayInputs = overlays.map((_, index) => `[text${index + 1}]`).join('');
-    filters.push(`[0:v]${overlayInputs}overlay=shortest=1:format=yuv420p[v]`);
-
-    return filters.join(';');
+    return overlays.map(overlay => this.createTextFilter(overlay, width, height)).join(',');
   }
 
   private createTextFilter(overlay: OverlayElement, width: number, height: number): string {
@@ -167,8 +152,6 @@ export class OverlayGenerator {
       const ffmpeg = spawn('ffmpeg', [
         '-i', videoPath,
         '-vf', filterComplex,
-        '-map', '[v]',
-        '-map', '0:a',
         '-c:v', 'libx264',
         '-c:a', 'copy',
         '-y',
