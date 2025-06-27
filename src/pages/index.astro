@@ -60,6 +60,33 @@
 				<span style="color: #aaa; font-size: 0.9em;">Each creates a 5-second sample with the selected style preset</span>
 			</div>
 
+			<!-- Live Preview Canvas -->
+			<div id="livePreviewContainer" style="margin-bottom: 2em; background: #1f1f23; border-radius: 0.5em; overflow: hidden; border: 1px solid #333; display: none;">
+				<div style="padding: 1em; text-align: center; color: #6366f1; font-weight: 500; border-bottom: 1px solid #333;">
+					🎬 Live Preview
+				</div>
+				<canvas 
+					id="livePreviewCanvas" 
+					style="width: 100%; max-width: 100%; height: auto; display: block; background: #000;"
+				></canvas>
+			</div>
+
+			<!-- Processing Status -->
+			<div id="status" style="margin-bottom: 2em; display: none;">
+				<h3>Processing Status:</h3>
+				<div id="statusText" style="color: #10b981; font-weight: 500; margin-bottom: 0.5em;"></div>
+				<div id="stageIndicator" style="color: #6366f1; font-size: 0.9em; margin-bottom: 1em;"></div>
+				
+				<div id="progress" style="margin-top: 1em;">
+					<div style="background: #1f1f23; height: 20px; border-radius: 10px; overflow: hidden; position: relative;">
+						<div id="progressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #6366f1, #8b5cf6); border-radius: 10px; transition: width 0.5s ease; position: relative;">
+							<div style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: white; font-size: 0.8em; font-weight: 500; text-shadow: 0 1px 2px rgba(0,0,0,0.5);"></div>
+						</div>
+					</div>
+				</div>
+				<div id="frameCountIndicator" style="margin-top: 0.5em; color: #aaa; font-size: 0.9em;"></div>
+			</div>
+
 			<form id="uploadForm" style="display: flex; flex-direction: column; gap: 1.5em;">
 				<div>
 					<label for="audioFile">
@@ -139,20 +166,6 @@
 				</button>
 			</form>
 
-			<div id="status" style="margin-top: 2em; display: none;">
-				<h3>Processing Status:</h3>
-				<div id="statusText" style="color: #10b981; font-weight: 500; margin-bottom: 0.5em;"></div>
-				<div id="stageIndicator" style="color: #6366f1; font-size: 0.9em; margin-bottom: 1em;"></div>
-				<div id="progress" style="margin-top: 1em;">
-					<div style="background: #1f1f23; height: 20px; border-radius: 10px; overflow: hidden; position: relative;">
-						<div id="progressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #6366f1, #8b5cf6); border-radius: 10px; transition: width 0.5s ease; position: relative;">
-							<div style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: white; font-size: 0.8em; font-weight: 500; text-shadow: 0 1px 2px rgba(0,0,0,0.5);"></div>
-						</div>
-					</div>
-				</div>
-				<div id="frameCountIndicator" style="margin-top: 0.5em; color: #aaa; font-size: 0.9em;"></div>
-			</div>
-
 			<div id="results" style="margin-top: 2em; display: none;">
 				<h3>Results:</h3>
 				<div id="videoInfo" style="background: #1f1f23; padding: 1em; border-radius: 0.5em; margin-bottom: 1em;"></div>
@@ -207,6 +220,8 @@
 			const testVideoWineCountry = document.getElementById('testVideoWineCountry') as HTMLButtonElement;
 			const videoPlayer = document.getElementById('videoPlayer') as HTMLVideoElement;
 			const videoLoadingIndicator = document.getElementById('videoLoadingIndicator') as HTMLDivElement;
+			const livePreviewCanvas = document.getElementById('livePreviewCanvas') as HTMLCanvasElement;
+			const livePreviewContainer = document.getElementById('livePreviewContainer') as HTMLDivElement;
 
 			let currentVideoPath: string = '';
 			let currentVideoUrl: string = '';
@@ -219,6 +234,29 @@
 				console.log('Test audio cache cleared');
 			}
 
+			// Function to initialize the live preview canvas
+			function initializeLivePreview() {
+				if (livePreviewCanvas && livePreviewContainer) {
+					// Show the preview container
+					livePreviewContainer.style.display = 'block';
+					
+					// Set canvas size for proper display
+					const containerWidth = livePreviewContainer.clientWidth - 40; // Account for padding
+					const aspectRatio = 16 / 9;
+					const displayHeight = containerWidth / aspectRatio;
+					
+					livePreviewCanvas.style.width = `${containerWidth}px`;
+					livePreviewCanvas.style.height = `${displayHeight}px`;
+					
+					// Clear the canvas
+					const ctx = livePreviewCanvas.getContext('2d');
+					if (ctx) {
+						ctx.fillStyle = '#000';
+						ctx.fillRect(0, 0, livePreviewCanvas.width, livePreviewCanvas.height);
+					}
+				}
+			}
+
 			// Browser-based video generation
 			class BrowserVideoGenerator {
 				private canvas: HTMLCanvasElement;
@@ -226,12 +264,31 @@
 				private audioContext: AudioContext | null = null;
 				private audioData: Float32Array | null = null;
 				private sampleRate: number = 44100;
+				private previewCanvas: HTMLCanvasElement | null = null;
+				private previewCtx: CanvasRenderingContext2D | null = null;
 
-				constructor() {
+				constructor(previewCanvas?: HTMLCanvasElement) {
 					this.canvas = document.createElement('canvas');
 					this.canvas.width = 1920;
 					this.canvas.height = 1080;
 					this.ctx = this.canvas.getContext('2d')!;
+					
+					// Set up preview canvas if provided
+					if (previewCanvas) {
+						this.previewCanvas = previewCanvas;
+						this.previewCanvas.width = 1920;
+						this.previewCanvas.height = 1080;
+						this.previewCtx = this.previewCanvas.getContext('2d')!;
+					}
+				}
+
+				// Method to update the preview canvas with the current frame
+				private updatePreview(): void {
+					if (this.previewCtx && this.previewCanvas) {
+						// Copy the current frame to the preview canvas
+						this.previewCtx.clearRect(0, 0, this.previewCanvas.width, this.previewCanvas.height);
+						this.previewCtx.drawImage(this.canvas, 0, 0, this.previewCanvas.width, this.previewCanvas.height);
+					}
 				}
 
 				async analyzeAudio(audioFile: File): Promise<any> {
@@ -308,6 +365,9 @@
 					
 					// Generate visual elements based on style preset
 					this.generateVisualElements(time, rms, stylePreset);
+					
+					// Update the preview canvas
+					this.updatePreview();
 				}
 
 				private generateBackground(rms: number, stylePreset: string): void {
@@ -694,9 +754,12 @@
 				statusText.style.color = '#10b981';
 				frameCountIndicator.textContent = '';
 
+				// Initialize live preview
+				initializeLivePreview();
+
 				try {
 					// Create browser video generator
-					const videoGenerator = new BrowserVideoGenerator();
+					const videoGenerator = new BrowserVideoGenerator(livePreviewCanvas);
 					
 					// Analyze audio
 					statusText.textContent = 'Analyzing audio...';
@@ -825,12 +888,15 @@
 				statusText.style.color = '#10b981';
 				frameCountIndicator.textContent = '';
 
+				// Initialize live preview
+				initializeLivePreview();
+
 				try {
 					// Clear cache to ensure we use the latest audio file
 					clearTestAudioCache();
 					
 					// Create browser video generator
-					const videoGenerator = new BrowserVideoGenerator();
+					const videoGenerator = new BrowserVideoGenerator(livePreviewCanvas);
 					
 					// Get or create the pre-built test audio file
 					statusText.textContent = cachedTestAudioFile ? 'Using cached test audio...' : 'Loading test audio file...';
@@ -910,12 +976,15 @@
 				statusText.style.color = '#10b981';
 				frameCountIndicator.textContent = '';
 
+				// Initialize live preview
+				initializeLivePreview();
+
 				try {
 					// Clear cache to ensure we use the latest audio file
 					clearTestAudioCache();
 					
 					// Create browser video generator
-					const videoGenerator = new BrowserVideoGenerator();
+					const videoGenerator = new BrowserVideoGenerator(livePreviewCanvas);
 					
 					// Get or create the pre-built test audio file
 					statusText.textContent = cachedTestAudioFile ? 'Using cached test audio...' : 'Loading test audio file...';
@@ -995,12 +1064,15 @@
 				statusText.style.color = '#10b981';
 				frameCountIndicator.textContent = '';
 
+				// Initialize live preview
+				initializeLivePreview();
+
 				try {
 					// Clear cache to ensure we use the latest audio file
 					clearTestAudioCache();
 					
 					// Create browser video generator
-					const videoGenerator = new BrowserVideoGenerator();
+					const videoGenerator = new BrowserVideoGenerator(livePreviewCanvas);
 					
 					// Get or create the pre-built test audio file
 					statusText.textContent = cachedTestAudioFile ? 'Using cached test audio...' : 'Loading test audio file...';
