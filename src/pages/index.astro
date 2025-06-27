@@ -952,7 +952,7 @@
 							this.ctx.restore();
 						} else if (shapeType === 2) {
 							// Circle with dramatic pulsing and morphing
-							const pulse = this.getEvolvingParam(1, time, 1.2, 0.4);
+							const pulse = Math.max(0.1, this.getEvolvingParam(1, time, 1.2, 0.4)); // Ensure minimum pulse value
 							const morphX = this.getEvolvingParam(1, time, 0.8, 0.3);
 							const morphY = this.getEvolvingParam(1, time, 0.6, 0.3);
 							this.ctx.save();
@@ -1163,31 +1163,37 @@
 				private generateRetroElements(time: number, rms: number, seed: number): void {
 					// Grid lines with memory-based organic spacing
 					const baseGridSize = this.randomRange(seed, 40, 80) + (rms * 100);
-					const gridSize = this.getEvolvingParam(baseGridSize, time, 0.4, baseGridSize * 0.5);
+					const gridSize = Math.max(20, this.getEvolvingParam(baseGridSize, time, 0.4, baseGridSize * 0.5)); // Minimum 20px grid size
 					const gridColor = this.randomChoice(seed, ['#ff00ff', '#00ffff', '#ffff00']);
 					this.ctx.strokeStyle = gridColor;
 					this.ctx.lineWidth = this.getEvolvingParam(1, time, 0.8, 1.0) + (rms * 2);
 					
-					// Memory-based organic animated grid
-					for (let x = 0; x < this.canvas.width; x += gridSize) {
+					// Memory-based organic animated grid with iteration limits
+					const maxGridLines = 50; // Limit maximum grid lines to prevent hanging
+					let gridLineCount = 0;
+					
+					for (let x = 0; x < this.canvas.width && gridLineCount < maxGridLines; x += gridSize) {
 						const waveOffset = this.getOrganicMotion(time, 0, 20, x * 0.01, rms);
 						this.ctx.beginPath();
 						this.ctx.moveTo(x + waveOffset, 0);
 						this.ctx.lineTo(x + waveOffset, this.canvas.height);
 						this.ctx.stroke();
+						gridLineCount++;
 					}
 					
-					for (let y = 0; y < this.canvas.height; y += gridSize) {
+					gridLineCount = 0;
+					for (let y = 0; y < this.canvas.height && gridLineCount < maxGridLines; y += gridSize) {
 						const waveOffset = this.getOrganicMotion(time, 0, 20, y * 0.01 + 1000, rms);
 						this.ctx.beginPath();
 						this.ctx.moveTo(0, y + waveOffset);
 						this.ctx.lineTo(this.canvas.width, y + waveOffset);
 						this.ctx.stroke();
+						gridLineCount++;
 					}
 					
 					// Circles with memory-based organic orbital motion
 					const baseNumCircles = Math.floor(3 + rms * 5);
-					const numCircles = this.randomInt(seed, baseNumCircles - 1, baseNumCircles + 3);
+					const numCircles = Math.min(15, this.randomInt(seed, baseNumCircles - 1, baseNumCircles + 3)); // Limit to 15 circles max
 					
 					for (let i = 0; i < numCircles; i++) {
 						// Memory-based organic orbital motion around center
@@ -1204,7 +1210,7 @@
 						const x = orbitX + this.getOrganicMotion(time, 0, orbitRadius * 0.3, i + 500, rms);
 						const y = orbitY + this.getOrganicMotion(time, 0, orbitRadius * 0.3, i + 600, rms);
 						
-						const radius = this.getEvolvingParam(20, time, 1.2, 15) + (rms * 40);
+						const radius = Math.max(1, this.getEvolvingParam(20, time, 1.2, 15) + (rms * 40)); // Ensure minimum radius of 1
 						const hue = this.getEvolvingParam(i * 60, time, 0.4, 60);
 						const saturation = this.getEvolvingParam(80, time, 0.6, 40);
 						const brightness = this.getEvolvingParam(60, time, 0.5, 30);
@@ -1273,7 +1279,7 @@
 						for (let p = 0; p < numParticles; p++) {
 							const particleX = this.getOrganicMotion(time, this.canvas.width * 0.5, 300, p + 500, rms);
 							const particleY = this.getOrganicMotion(time, this.canvas.height * 0.3, 150, p + 600, rms);
-							const particleSize = this.getEvolvingParam(3, time, 1.2, 3) + (rms * 8);
+							const particleSize = Math.max(0.5, this.getEvolvingParam(3, time, 1.2, 3) + (rms * 8)); // Ensure minimum particle size
 							const particleOpacity = this.getEvolvingParam(0.3, time, 0.8, 0.2) + (rms * 0.4);
 							
 							this.ctx.fillStyle = `rgba(255, 255, 255, ${particleOpacity})`;
