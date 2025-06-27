@@ -261,25 +261,449 @@
 			class BrowserVideoGenerator {
 				private canvas: HTMLCanvasElement;
 				private ctx: CanvasRenderingContext2D;
+				private previewCanvas?: HTMLCanvasElement;
+				private previewCtx?: CanvasRenderingContext2D;
 				private audioContext: AudioContext | null = null;
 				private audioData: Float32Array | null = null;
 				private sampleRate: number = 44100;
-				private previewCanvas: HTMLCanvasElement | null = null;
-				private previewCtx: CanvasRenderingContext2D | null = null;
+				private seed: number;
+				private timeOffset: number = 0; // For continuous evolution
+				private generationId: number; // Unique ID for each generation
+				private style: string; // Style preset
 
-				constructor(previewCanvas?: HTMLCanvasElement) {
+				// Memory-based motion system for truly organic movement
+				private motionMemory: Map<number, { positions: number[], velocities: number[], lastTime: number }> = new Map();
+				private globalTime: number = 0;
+
+				constructor(previewCanvas?: HTMLCanvasElement, style: string = 'french-new-wave') {
 					this.canvas = document.createElement('canvas');
 					this.canvas.width = 1920;
 					this.canvas.height = 1080;
 					this.ctx = this.canvas.getContext('2d')!;
-					
-					// Set up preview canvas if provided
+					this.previewCanvas = previewCanvas;
 					if (previewCanvas) {
-						this.previewCanvas = previewCanvas;
-						this.previewCanvas.width = 1920;
-						this.previewCanvas.height = 1080;
-						this.previewCtx = this.previewCanvas.getContext('2d')!;
+						this.previewCtx = previewCanvas.getContext('2d')!;
 					}
+					this.seed = Math.random() * 1000000;
+					this.generationId = Math.floor(Math.random() * 1000000);
+					this.style = style;
+				}
+
+				// Simple seeded random number generator
+				private seededRandom(seed: number): () => number {
+					let state = seed;
+					return () => {
+						state = (state * 9301 + 49297) % 233280;
+						return state / 233280;
+					};
+				}
+
+				// Get random value between min and max using seeded random
+				private randomRange(seed: number, min: number, max: number): number {
+					const random = this.seededRandom(seed);
+					return min + (random() * (max - min));
+				}
+
+				// Get random integer between min and max using seeded random
+				private randomInt(seed: number, min: number, max: number): number {
+					return Math.floor(this.randomRange(seed, min, max + 1));
+				}
+
+				// Pick random element from array using seeded random
+				private randomChoice<T>(seed: number, array: T[]): T {
+					return array[this.randomInt(seed, 0, array.length - 1)];
+				}
+
+				// Get evolving parameter that changes over time with dramatic evolution
+				private getEvolvingParam(baseValue: number, time: number, evolutionSpeed: number = 1, evolutionRange: number = 0.3): number {
+					// Use multiple sine waves for more complex evolution
+					const evolution1 = Math.sin(time * evolutionSpeed) * evolutionRange;
+					const evolution2 = Math.sin(time * evolutionSpeed * 2.3) * evolutionRange * 0.5;
+					const evolution3 = Math.sin(time * evolutionSpeed * 0.7) * evolutionRange * 0.3;
+					return baseValue + evolution1 + evolution2 + evolution3;
+				}
+
+				// Get truly organic motion using memory and state evolution
+				private getOrganicMotion(time: number, baseValue: number, amplitude: number, elementId: number, rms: number = 0.1): number {
+					// Initialize memory for this element if it doesn't exist
+					if (!this.motionMemory.has(elementId)) {
+						this.motionMemory.set(elementId, {
+							positions: [baseValue],
+							velocities: [0],
+							lastTime: time
+						});
+					}
+
+					const memory = this.motionMemory.get(elementId)!;
+					const timeDelta = time - memory.lastTime;
+					
+					// Get current state
+					const currentPos = memory.positions[memory.positions.length - 1];
+					const currentVel = memory.velocities[memory.velocities.length - 1];
+					
+					// Create organic forces based on history and environment
+					const historyForce = this.getHistoryForce(memory, elementId);
+					const environmentalForce = this.getEnvironmentalForce(time, elementId, baseValue);
+					const randomForce = this.getRandomForce(time, elementId);
+					const audioForce = this.getAudioForce(time, elementId, rms);
+					
+					// Combine forces with organic weighting
+					const totalForce = historyForce * 0.3 + environmentalForce * 0.4 + randomForce * 0.2 + audioForce * 0.1;
+					
+					// Apply physics-like motion with damping
+					const damping = 0.95;
+					const newVel = currentVel * damping + totalForce * timeDelta;
+					const newPos = currentPos + newVel * timeDelta;
+					
+					// Add some organic constraints
+					const constrainedPos = this.applyOrganicConstraints(newPos, baseValue, amplitude, memory);
+					
+					// Update memory (keep last 10 positions for history)
+					memory.positions.push(constrainedPos);
+					memory.velocities.push(newVel);
+					if (memory.positions.length > 10) {
+						memory.positions.shift();
+						memory.velocities.shift();
+					}
+					memory.lastTime = time;
+					
+					return constrainedPos;
+				}
+
+				// Get force based on movement history
+				private getHistoryForce(memory: any, elementId: number): number {
+					if (memory.positions.length < 3) return 0;
+					
+					// Calculate trend from recent history
+					const recent = memory.positions.slice(-3);
+					const trend = (recent[2] - recent[0]) / 2;
+					
+					// Add some organic "memory" - elements tend to continue recent patterns
+					const momentum = trend * 0.5;
+					
+					// Add some "fatigue" - elements slow down over time
+					const fatigue = -memory.velocities[memory.velocities.length - 1] * 0.1;
+					
+					// Add some "exploration" - elements occasionally change direction
+					const exploration = Math.random() * 0.2 - 0.1;
+					
+					return momentum + fatigue + exploration;
+				}
+
+				// Get force from environment (other elements, boundaries, etc.)
+				private getEnvironmentalForce(time: number, elementId: number, baseValue: number): number {
+					// Create environmental "pressure" that changes over time
+					const pressure = Math.sin(time * 0.1 + elementId * 0.3) * 0.5;
+					
+					// Add boundary attraction/repulsion
+					const boundaryForce = this.getBoundaryForce(baseValue);
+					
+					// Add interaction with other elements (simplified)
+					const interactionForce = this.getInteractionForce(elementId);
+					
+					return pressure + boundaryForce + interactionForce;
+				}
+
+				// Get boundary forces
+				private getBoundaryForce(currentValue: number): number {
+					const boundaryStrength = 0.3;
+					const center = 0.5;
+					const distance = currentValue - center;
+					
+					// Attract toward center when far away, repel when too close
+					if (Math.abs(distance) > 0.3) {
+						return -distance * boundaryStrength;
+					} else if (Math.abs(distance) < 0.1) {
+						return distance * boundaryStrength * 2;
+					}
+					return 0;
+				}
+
+				// Get interaction forces between elements
+				private getInteractionForce(elementId: number): number {
+					let totalForce = 0;
+					
+					// Simplified interaction with other elements
+					this.motionMemory.forEach((memory, otherId) => {
+						if (otherId !== elementId && memory.positions.length > 0) {
+							const otherPos = memory.positions[memory.positions.length - 1];
+							const distance = Math.abs(otherPos - 0.5);
+							
+							// Repel from other elements
+							if (distance < 0.2) {
+								totalForce += (0.5 - otherPos) * 0.1;
+							}
+						}
+					});
+					
+					return totalForce;
+				}
+
+				// Get truly random force
+				private getRandomForce(time: number, elementId: number): number {
+					// Use time-based seed for reproducible randomness
+					const seed = (time * 1000 + elementId * 100 + this.generationId) % 1000000;
+					const random = (seed * 9301 + 49297) % 233280;
+					return (random / 233280 - 0.5) * 0.3;
+				}
+
+				// Get force based on audio (RMS)
+				private getAudioForce(time: number, elementId: number, rms: number): number {
+					// This will be connected to the actual RMS value when available
+					const simulatedRMS = Math.random() * 0.5;
+					return simulatedRMS * 0.2;
+				}
+
+				// Apply organic constraints
+				private applyOrganicConstraints(position: number, baseValue: number, amplitude: number, memory: any): number {
+					// Soft boundaries
+					const minBound = baseValue - amplitude;
+					const maxBound = baseValue + amplitude;
+					
+					if (position < minBound) {
+						position = minBound + (minBound - position) * 0.3; // Bounce with energy loss
+					} else if (position > maxBound) {
+						position = maxBound - (position - maxBound) * 0.3; // Bounce with energy loss
+					}
+					
+					// Add some organic "stickiness" to recent positions
+					if (memory.positions.length > 0) {
+						const lastPos = memory.positions[memory.positions.length - 1];
+						const stickiness = 0.1;
+						position = position * (1 - stickiness) + lastPos * stickiness;
+					}
+					
+					return position;
+				}
+
+				// Get evolving motion that changes behavior over time
+				private getEvolvingMotion(time: number, baseValue: number, amplitude: number, elementId: number): number {
+					// Create different motion phases that evolve over time
+					const phase = Math.floor(time * 0.2 + elementId * 0.1) % 4;
+					const phaseProgress = (time * 0.2 + elementId * 0.1) % 1;
+					
+					let motion = 0;
+					
+					switch (phase) {
+						case 0: // Exploration phase
+							motion = this.getExplorationMotion(time, elementId, amplitude);
+							break;
+						case 1: // Gathering phase
+							motion = this.getGatheringMotion(time, elementId, amplitude);
+							break;
+						case 2: // Scattering phase
+							motion = this.getScatteringMotion(time, elementId, amplitude);
+							break;
+						case 3: // Resting phase
+							motion = this.getRestingMotion(time, elementId, amplitude);
+							break;
+					}
+					
+					// Add phase transition smoothing
+					const transition = Math.sin(phaseProgress * Math.PI) * 0.5 + 0.5;
+					
+					return baseValue + motion * transition;
+				}
+
+				// Different motion behaviors
+				private getExplorationMotion(time: number, elementId: number, amplitude: number): number {
+					// Wide, slow exploration
+					return Math.sin(time * 0.3 + elementId * 0.7) * amplitude * 0.8;
+				}
+
+				private getGatheringMotion(time: number, elementId: number, amplitude: number): number {
+					// Move toward center
+					const center = 0.5;
+					return (center - 0.5) * amplitude * 0.6;
+				}
+
+				private getScatteringMotion(time: number, elementId: number, amplitude: number): number {
+					// Move away from center
+					const center = 0.5;
+					return (0.5 - center) * amplitude * 0.6;
+				}
+
+				private getRestingMotion(time: number, elementId: number, amplitude: number): number {
+					// Minimal movement
+					return Math.sin(time * 0.1 + elementId * 0.3) * amplitude * 0.2;
+				}
+
+				// Get flocking-like motion
+				private getFlockingMotion(time: number, baseValue: number, amplitude: number, elementId: number): number {
+					// Simulate flocking behavior
+					const alignment = this.getAlignmentForce(elementId);
+					const cohesion = this.getCohesionForce(elementId);
+					const separation = this.getSeparationForce(elementId);
+					
+					const flockingForce = alignment * 0.3 + cohesion * 0.3 + separation * 0.4;
+					
+					return baseValue + flockingForce * amplitude;
+				}
+
+				// Flocking forces
+				private getAlignmentForce(elementId: number): number {
+					let avgVelocity = 0;
+					let count = 0;
+					
+					this.motionMemory.forEach((memory, otherId) => {
+						if (otherId !== elementId && memory.velocities.length > 0) {
+							avgVelocity += memory.velocities[memory.velocities.length - 1];
+							count++;
+						}
+					});
+					
+					return count > 0 ? avgVelocity / count : 0;
+				}
+
+				private getCohesionForce(elementId: number): number {
+					let avgPosition = 0;
+					let count = 0;
+					
+					this.motionMemory.forEach((memory, otherId) => {
+						if (otherId !== elementId && memory.positions.length > 0) {
+							avgPosition += memory.positions[memory.positions.length - 1];
+							count++;
+						}
+					});
+					
+					return count > 0 ? (avgPosition / count - 0.5) * 0.5 : 0;
+				}
+
+				private getSeparationForce(elementId: number): number {
+					let separationForce = 0;
+					
+					this.motionMemory.forEach((memory, otherId) => {
+						if (otherId !== elementId && memory.positions.length > 0) {
+							const otherPos = memory.positions[memory.positions.length - 1];
+							const distance = Math.abs(otherPos - 0.5);
+							
+							if (distance < 0.2) {
+								separationForce += (0.5 - otherPos) * 0.3;
+							}
+						}
+					});
+					
+					return separationForce;
+				}
+
+				// Get truly organic evolving motion with changing patterns
+				private getOrganicEvolvingMotion(time: number, baseValue: number, amplitude: number, elementId: number): number {
+					// Create multiple layers of motion that evolve independently
+					const layer1 = Math.sin(time * 0.3 + elementId * 0.5) * amplitude * 0.4;
+					const layer2 = Math.cos(time * 0.7 + elementId * 1.2) * amplitude * 0.3;
+					const layer3 = Math.sin(time * 1.1 + elementId * 0.8) * amplitude * 0.2;
+					
+					// Add evolving direction changes
+					const directionChange = Math.sin(time * 0.2 + elementId * 0.3) * Math.PI * 2;
+					const evolvingMotion = Math.sin(time * 0.5 + directionChange) * amplitude * 0.3;
+					
+					// Add chaotic elements that change over time
+					const chaos = Math.sin(time * 0.1 + elementId * 0.7) * Math.sin(time * 0.3 + elementId * 1.1) * amplitude * 0.2;
+					
+					return baseValue + layer1 + layer2 + layer3 + evolvingMotion + chaos;
+				}
+
+				// Get wandering motion that drifts in different directions over time
+				private getWanderingMotion(time: number, baseValue: number, amplitude: number, wanderSpeed: number = 1): number {
+					// Create wandering motion that changes direction periodically
+					const wanderPhase = Math.floor(time * wanderSpeed * 0.2) * Math.PI * 2;
+					const currentDirection = Math.sin(wanderPhase) * Math.PI * 2;
+					
+					// Add some randomness to the direction changes
+					const randomOffset = this.seed * 0.1 + this.generationId * 0.05;
+					const direction = currentDirection + randomOffset;
+					
+					// Create motion in the current direction
+					const motion = Math.sin(time * wanderSpeed + direction) * amplitude;
+					const drift = Math.cos(time * wanderSpeed * 0.3 + direction * 0.5) * amplitude * 0.4;
+					
+					return baseValue + motion + drift;
+				}
+
+				// Get flowing motion that follows natural curves
+				private getFlowingMotion(time: number, baseValue: number, amplitude: number, flowSpeed: number = 1): number {
+					// Create flowing motion that follows natural curves
+					const flowPhase = time * flowSpeed;
+					const curve1 = Math.sin(flowPhase) * amplitude;
+					const curve2 = Math.sin(flowPhase * 2.3) * amplitude * 0.3;
+					const curve3 = Math.cos(flowPhase * 0.7) * amplitude * 0.2;
+					
+					// Add gradual direction changes
+					const directionShift = Math.sin(time * 0.1) * Math.PI * 0.5;
+					const shiftedMotion = Math.sin(flowPhase + directionShift) * amplitude * 0.4;
+					
+					return baseValue + curve1 + curve2 + curve3 + shiftedMotion;
+				}
+
+				// Get complex organic motion with multiple evolving patterns
+				private getComplexOrganicMotion(time: number, baseValue: number, amplitude: number, elementId: number): number {
+					// Create a complex motion system with multiple evolving components
+					
+					// Primary motion with evolving frequency
+					const primaryFreq = 0.3 + Math.sin(time * 0.1 + elementId * 0.2) * 0.2;
+					const primaryMotion = Math.sin(time * primaryFreq + elementId * 0.5) * amplitude * 0.4;
+					
+					// Secondary motion with phase evolution
+					const secondaryPhase = time * 0.2 + elementId * 1.3;
+					const secondaryMotion = Math.cos(time * 0.7 + secondaryPhase) * amplitude * 0.3;
+					
+					// Tertiary motion with chaotic elements
+					const chaos1 = Math.sin(time * 0.1 + elementId * 0.7) * Math.cos(time * 0.3 + elementId * 1.1);
+					const chaos2 = Math.sin(time * 0.5 + elementId * 0.9) * Math.sin(time * 0.2 + elementId * 0.4);
+					const chaoticMotion = (chaos1 + chaos2) * amplitude * 0.2;
+					
+					// Direction evolution
+					const directionEvolution = Math.sin(time * 0.15 + elementId * 0.6) * Math.PI * 2;
+					const evolvingMotion = Math.sin(time * 0.4 + directionEvolution) * amplitude * 0.3;
+					
+					// Pattern switching
+					const patternSwitch = Math.sin(time * 0.08 + elementId * 0.3);
+					const patternA = Math.sin(time * 0.6 + elementId * 0.8) * amplitude * 0.2;
+					const patternB = Math.cos(time * 0.9 + elementId * 1.2) * amplitude * 0.2;
+					const patternMotion = patternSwitch > 0 ? patternA : patternB;
+					
+					return baseValue + primaryMotion + secondaryMotion + chaoticMotion + evolvingMotion + patternMotion;
+				}
+
+				// Get morphing motion that transitions between different movement styles
+				private getMorphingMotion(time: number, baseValue: number, amplitude: number, elementId: number): number {
+					// Create motion that morphs between different movement patterns
+					const morphPhase = (Math.sin(time * 0.1 + elementId * 0.4) + 1) / 2; // 0 to 1
+					
+					// Pattern A: Circular motion
+					const patternA = Math.sin(time * 0.5 + elementId * 0.6) * amplitude * 0.4;
+					
+					// Pattern B: Linear motion with drift
+					const patternB = Math.cos(time * 0.3 + elementId * 1.1) * amplitude * 0.3 + 
+									Math.sin(time * 0.7 + elementId * 0.8) * amplitude * 0.2;
+					
+					// Pattern C: Chaotic motion
+					const patternC = Math.sin(time * 0.2 + elementId * 0.9) * Math.cos(time * 0.4 + elementId * 1.3) * amplitude * 0.3;
+					
+					// Morph between patterns
+					const motion = patternA * (1 - morphPhase) + patternB * morphPhase + patternC * Math.sin(time * 0.05);
+					
+					return baseValue + motion;
+				}
+
+				// Get evolving directional motion that changes over time
+				private getEvolvingDirectionalMotion(time: number, baseValue: number, amplitude: number, evolutionSpeed: number = 1): number {
+					// Use time-based direction changes to avoid looping patterns
+					const directionPhase = Math.sin(time * evolutionSpeed * 0.3) * Math.PI * 2;
+					const amplitudeModulation = Math.sin(time * evolutionSpeed * 0.7) * 0.5 + 0.5;
+					
+					// Create evolving motion with changing direction
+					const motion1 = Math.sin(time * evolutionSpeed + directionPhase) * amplitude * amplitudeModulation;
+					const motion2 = Math.cos(time * evolutionSpeed * 1.3 + directionPhase * 0.7) * amplitude * 0.6 * amplitudeModulation;
+					const motion3 = Math.sin(time * evolutionSpeed * 0.5 + directionPhase * 1.4) * amplitude * 0.4 * amplitudeModulation;
+					
+					return baseValue + motion1 + motion2 + motion3;
+				}
+
+				// Get morphing parameter that transitions between different states
+				private getMorphingParam(time: number, state1: number, state2: number, morphSpeed: number = 1): number {
+					const morph = (Math.sin(time * morphSpeed) + 1) / 2; // 0 to 1
+					return state1 + (state2 - state1) * morph;
 				}
 
 				// Method to update the preview canvas with the current frame
@@ -371,107 +795,218 @@
 					}
 				}
 
-				generateFrame(time: number, audioAnalysis: any, stylePreset: string): void {
-					const fps = 30;
-					const frameIndex = Math.floor(time * fps);
+				generateFrame(time: number, rms: number): void {
+					// Initialize global time for the first frame
+					if (this.globalTime === 0) {
+						this.globalTime = time;
+					}
 					
-					// Use frame-based audio analysis for better synchronization
-					const rms = audioAnalysis.rms[frameIndex] || 0.1;
+					// Clear motion memory when starting a new generation
+					if (time < 0.1) {
+						this.motionMemory.clear();
+					}
+					
+					// Update global time
+					this.globalTime = time;
 					
 					// Clear canvas
 					this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 					
-					// Generate background based on style preset
-					this.generateBackground(rms, stylePreset);
-					
-					// Generate visual elements based on style preset
-					this.generateVisualElements(time, rms, stylePreset);
-					
-					// Update the preview canvas
-					this.updatePreview();
-				}
-
-				private generateBackground(rms: number, stylePreset: string): void {
-					if (stylePreset === 'French New Wave') {
-						// French New Wave: Black and white with RMS-reactive contrast
-						const brightness = rms > 0.15 ? (20 + rms * 60) : (10 + rms * 20);
-						const color = `rgb(${brightness}%, ${brightness}%, ${brightness}%)`;
-						this.ctx.fillStyle = color;
+					// Set background based on style
+					if (this.style === 'french-new-wave') {
+						this.ctx.fillStyle = '#000000';
 						this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-					} else if (stylePreset === "'80s Retro Chromatic") {
-						// 80s Retro: Colorful gradient
-						const hue = (Date.now() * 0.1) % 360;
-						const gradient = this.ctx.createLinearGradient(0, 0, this.canvas.width, this.canvas.height);
-						gradient.addColorStop(0, `hsl(${hue}, 80%, 60%)`);
-						gradient.addColorStop(1, `hsl(${hue + 180}, 80%, 60%)`);
-						this.ctx.fillStyle = gradient;
+					} else if (this.style === 'retro') {
+						this.ctx.fillStyle = '#000000';
 						this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-					} else {
-						// Wine Country: Warm colors
-						const gradient = this.ctx.createRadialGradient(
-							this.canvas.width / 2, this.canvas.height / 2, 0,
-							this.canvas.width / 2, this.canvas.height / 2, this.canvas.width / 2
-						);
-						gradient.addColorStop(0, '#DAA520');
-						gradient.addColorStop(1, '#8B4513');
-						this.ctx.fillStyle = gradient;
-						this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-					}
-				}
-
-				private generateVisualElements(time: number, rms: number, stylePreset: string): void {
-					if (stylePreset === 'French New Wave') {
-						this.generateFrenchNewWaveElements(time, rms);
-					} else if (stylePreset === "'80s Retro Chromatic") {
-						this.generateRetroElements(time, rms);
-					} else {
-						this.generateWineCountryElements(time, rms);
-					}
-				}
-
-				private generateFrenchNewWaveElements(time: number, rms: number): void {
-					// Jump cut effect
-					if (rms > 0.15) {
-						// Flash effect
-						this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+					} else if (this.style === 'wine-country') {
+						this.ctx.fillStyle = '#2F4F2F';
 						this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 					}
 					
-					// Geometric shapes
-					const numShapes = Math.floor(2 + rms * 4);
+					// Generate elements based on style
+					const seed = this.seed;
+					
+					if (this.style === 'french-new-wave') {
+						this.generateFrenchNewWaveElements(time, rms, seed);
+					} else if (this.style === 'retro') {
+						this.generateRetroElements(time, rms, seed);
+					} else if (this.style === 'wine-country') {
+						this.generateWineCountryElements(time, rms, seed);
+					}
+				}
+
+				private generateFrenchNewWaveElements(time: number, rms: number, seed: number): void {
+					// Jump cut effect with dramatic time evolution
+					const threshold = this.getEvolvingParam(0.15, time, 0.6, 0.06);
+					if (rms > threshold) {
+						// Flash effect with evolving opacity and color
+						const flashOpacity = this.getEvolvingParam(0.1, time, 1.2, 0.1);
+						const flashColor = Math.sin(time * 0.8) > 0 ? 'rgba(255, 255, 255, ' : 'rgba(0, 0, 0, ';
+						this.ctx.fillStyle = flashColor + flashOpacity + ')';
+						this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+					}
+					
+					// Geometric shapes with memory-based organic motion
+					const baseNumShapes = Math.floor(2 + rms * 4);
+					const numShapes = this.randomInt(seed, baseNumShapes - 1, baseNumShapes + 3);
+					
 					for (let i = 0; i < numShapes; i++) {
-						const x = this.canvas.width * 0.2 + (i * this.canvas.width * 0.3);
-						const y = this.canvas.height * 0.4 + (i * this.canvas.height * 0.2);
-						const size = 20 + rms * 60;
+						// Memory-based organic motion for positions
+						const baseX = this.randomRange(seed + i * 100, this.canvas.width * 0.1, this.canvas.width * 0.9);
+						const baseY = this.randomRange(seed + i * 200, this.canvas.height * 0.1, this.canvas.height * 0.9);
 						
-						this.ctx.fillStyle = rms > 0.2 ? '#ffffff' : '#000000';
-						this.ctx.strokeStyle = rms > 0.2 ? '#000000' : '#ffffff';
-						this.ctx.lineWidth = 1 + rms * 2;
+						// Use different motion types for variety
+						const motionType = i % 3;
+						let x, y;
 						
-						if (i % 2 === 0) {
-							// Triangle
+						if (motionType === 0) {
+							// Organic motion with memory
+							x = this.getOrganicMotion(time, baseX, 80 + (rms * 150), i, rms);
+							y = this.getOrganicMotion(time, baseY, 60 + (rms * 120), i + 100, rms);
+						} else if (motionType === 1) {
+							// Evolving motion with phases
+							x = this.getEvolvingMotion(time, baseX, 70 + (rms * 130), i);
+							y = this.getEvolvingMotion(time, baseY, 50 + (rms * 100), i + 100);
+						} else {
+							// Flocking motion
+							x = this.getFlockingMotion(time, baseX, 90 + (rms * 160), i);
+							y = this.getFlockingMotion(time, baseY, 65 + (rms * 110), i + 100);
+						}
+						
+						// Dramatic evolving size and properties
+						const baseSize = this.randomRange(seed + i * 300, 15, 25) + (rms * 60);
+						const size = this.getEvolvingParam(baseSize, time, 0.8, baseSize * 0.5);
+						const shapeThreshold = this.getEvolvingParam(0.2, time, 0.4, 0.08);
+						
+						// Morph between black/white and grayscale
+						const isBlackWhite = Math.sin(time * 0.3 + i) > 0;
+						if (isBlackWhite) {
+							this.ctx.fillStyle = rms > shapeThreshold ? '#ffffff' : '#000000';
+							this.ctx.strokeStyle = rms > shapeThreshold ? '#000000' : '#ffffff';
+						} else {
+							const gray = this.getEvolvingParam(128, time, 0.5, 100);
+							this.ctx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
+							this.ctx.strokeStyle = `rgb(${255-gray}, ${255-gray}, ${255-gray})`;
+						}
+						
+						this.ctx.lineWidth = this.getEvolvingParam(1, time, 1.0, 1.0) + (rms * 2);
+						
+						// Dramatic evolving shape types over time
+						const shapeType = this.randomInt(seed + i * 600 + Math.floor(time * 3), 0, 4);
+						
+						if (shapeType === 0) {
+							// Triangle with dramatic rotation and scaling
+							const rotation = time * 1.2 + i;
+							const scale = this.getEvolvingParam(1, time, 0.6, 0.5);
+							this.ctx.save();
+							this.ctx.translate(x, y);
+							this.ctx.rotate(rotation);
+							this.ctx.scale(scale, scale);
 							this.ctx.beginPath();
-							this.ctx.moveTo(x, y - size);
-							this.ctx.lineTo(x - size, y + size);
-							this.ctx.lineTo(x + size, y + size);
+							this.ctx.moveTo(0, -size);
+							this.ctx.lineTo(-size, size);
+							this.ctx.lineTo(size, size);
 							this.ctx.closePath();
 							this.ctx.fill();
 							this.ctx.stroke();
+							this.ctx.restore();
+						} else if (shapeType === 1) {
+							// Rectangle with dramatic scaling and rotation
+							const scale = this.getEvolvingParam(1, time, 0.6, 0.6);
+							const rotation = time * 0.8 + i * 0.5;
+							this.ctx.save();
+							this.ctx.translate(x, y);
+							this.ctx.rotate(rotation);
+							this.ctx.scale(scale, scale * this.getEvolvingParam(1, time, 0.4, 0.3));
+							this.ctx.fillRect(-size, -size, size * 2, size * 2);
+							this.ctx.strokeRect(-size, -size, size * 2, size * 2);
+							this.ctx.restore();
+						} else if (shapeType === 2) {
+							// Circle with dramatic pulsing and morphing
+							const pulse = this.getEvolvingParam(1, time, 1.2, 0.4);
+							const morphX = this.getEvolvingParam(1, time, 0.8, 0.3);
+							const morphY = this.getEvolvingParam(1, time, 0.6, 0.3);
+							this.ctx.save();
+							this.ctx.translate(x, y);
+							this.ctx.scale(morphX, morphY);
+							this.ctx.beginPath();
+							this.ctx.arc(0, 0, size * pulse, 0, Math.PI * 2);
+							this.ctx.fill();
+							this.ctx.stroke();
+							this.ctx.restore();
+						} else if (shapeType === 3) {
+							// Polygon with dramatic morphing
+							const numPoints = this.randomInt(seed + i * 700, 5, 10);
+							const morphFactor = this.getEvolvingParam(0.5, time, 0.8, 0.4);
+							const rotation = time * 0.5;
+							this.ctx.save();
+							this.ctx.translate(x, y);
+							this.ctx.rotate(rotation);
+							this.ctx.beginPath();
+							for (let j = 0; j < numPoints; j++) {
+								const angle = (j * 2 * Math.PI) / numPoints;
+								const radius = j % 2 === 0 ? size : size * morphFactor;
+								const px = radius * Math.cos(angle + time * 0.4);
+								const py = radius * Math.sin(angle + time * 0.4);
+								if (j === 0) {
+									this.ctx.moveTo(px, py);
+								} else {
+									this.ctx.lineTo(px, py);
+								}
+							}
+							this.ctx.closePath();
+							this.ctx.fill();
+							this.ctx.stroke();
+							this.ctx.restore();
 						} else {
-							// Rectangle
-							this.ctx.fillRect(x - size, y - size, size * 2, size * 2);
-							this.ctx.strokeRect(x - size, y - size, size * 2, size * 2);
+							// Star with dramatic morphing
+							const numPoints = this.randomInt(seed + i * 800, 5, 8);
+							const innerRadius = this.getEvolvingParam(size * 0.3, time, 0.6, size * 0.2);
+							const outerRadius = this.getEvolvingParam(size, time, 0.4, size * 0.3);
+							this.ctx.save();
+							this.ctx.translate(x, y);
+							this.ctx.rotate(time * 0.3);
+							this.ctx.beginPath();
+							for (let j = 0; j < numPoints * 2; j++) {
+								const angle = (j * Math.PI) / numPoints;
+								const radius = j % 2 === 0 ? outerRadius : innerRadius;
+								const px = radius * Math.cos(angle);
+								const py = radius * Math.sin(angle);
+								if (j === 0) {
+									this.ctx.moveTo(px, py);
+								} else {
+									this.ctx.lineTo(px, py);
+								}
+							}
+							this.ctx.closePath();
+							this.ctx.fill();
+							this.ctx.stroke();
+							this.ctx.restore();
 						}
 					}
 					
-					// Lines
-					const numLines = Math.floor(2 + rms * 6);
+					// Lines with memory-based organic motion
+					const baseNumLines = Math.floor(2 + rms * 6);
+					const numLines = this.randomInt(seed + 1000, baseNumLines - 1, baseNumLines + 3);
+					
 					for (let i = 0; i < numLines; i++) {
-						const y1 = this.canvas.height * 0.2 + (i * this.canvas.height * 0.25);
-						const y2 = y1 + Math.sin(time + i) * (50 + rms * 150);
-						const strokeWidth = 1 + rms * 5;
+						const baseY = this.randomRange(seed + i * 200, this.canvas.height * 0.1, this.canvas.height * 0.9);
+						const y1 = this.getOrganicMotion(time, baseY, 40, i + 200, rms);
+						const y2 = y1 + this.getOrganicMotion(time, 0, 300, i + 300, rms);
 						
-						this.ctx.strokeStyle = rms > 0.18 ? '#ffffff' : '#000000';
+						const strokeWidth = this.getEvolvingParam(1, time, 1.0, 1.0) + (rms * 5);
+						const lineThreshold = this.getEvolvingParam(0.18, time, 0.4, 0.06);
+						
+						// Morph between black/white and grayscale
+						const isBlackWhite = Math.sin(time * 0.4 + i) > 0;
+						if (isBlackWhite) {
+							this.ctx.strokeStyle = rms > lineThreshold ? '#ffffff' : '#000000';
+						} else {
+							const gray = this.getEvolvingParam(128, time, 0.6, 120);
+							this.ctx.strokeStyle = `rgb(${gray}, ${gray}, ${gray})`;
+						}
+						
 						this.ctx.lineWidth = strokeWidth;
 						this.ctx.beginPath();
 						this.ctx.moveTo(0, y1);
@@ -480,65 +1015,125 @@
 					}
 				}
 
-				private generateRetroElements(time: number, rms: number): void {
-					// Grid lines
-					const gridSize = 50 + rms * 100;
-					this.ctx.strokeStyle = '#ff00ff';
-					this.ctx.lineWidth = 1 + rms * 2;
+				private generateRetroElements(time: number, rms: number, seed: number): void {
+					// Grid lines with memory-based organic spacing
+					const baseGridSize = this.randomRange(seed, 40, 80) + (rms * 100);
+					const gridSize = this.getEvolvingParam(baseGridSize, time, 0.4, baseGridSize * 0.5);
+					const gridColor = this.randomChoice(seed, ['#ff00ff', '#00ffff', '#ffff00']);
+					this.ctx.strokeStyle = gridColor;
+					this.ctx.lineWidth = this.getEvolvingParam(1, time, 0.8, 1.0) + (rms * 2);
 					
+					// Memory-based organic animated grid
 					for (let x = 0; x < this.canvas.width; x += gridSize) {
+						const waveOffset = this.getOrganicMotion(time, 0, 20, x * 0.01, rms);
 						this.ctx.beginPath();
-						this.ctx.moveTo(x, 0);
-						this.ctx.lineTo(x, this.canvas.height);
+						this.ctx.moveTo(x + waveOffset, 0);
+						this.ctx.lineTo(x + waveOffset, this.canvas.height);
 						this.ctx.stroke();
 					}
 					
 					for (let y = 0; y < this.canvas.height; y += gridSize) {
+						const waveOffset = this.getOrganicMotion(time, 0, 20, y * 0.01 + 1000, rms);
 						this.ctx.beginPath();
-						this.ctx.moveTo(0, y);
-						this.ctx.lineTo(this.canvas.width, y);
+						this.ctx.moveTo(0, y + waveOffset);
+						this.ctx.lineTo(this.canvas.width, y + waveOffset);
 						this.ctx.stroke();
 					}
 					
-					// Circles
-					const numCircles = Math.floor(3 + rms * 5);
+					// Circles with memory-based organic orbital motion
+					const baseNumCircles = Math.floor(3 + rms * 5);
+					const numCircles = this.randomInt(seed, baseNumCircles - 1, baseNumCircles + 3);
+					
 					for (let i = 0; i < numCircles; i++) {
-						const x = this.canvas.width * 0.2 + (i * this.canvas.width * 0.2);
-						const y = this.canvas.height * 0.5 + Math.sin(time + i) * 50;
-						const radius = 20 + rms * 40;
+						// Memory-based organic orbital motion around center
+						const centerX = this.canvas.width / 2;
+						const centerY = this.canvas.height / 2;
+						const orbitRadius = this.randomRange(seed + i * 100, 100, 400);
+						const orbitSpeed = this.randomRange(seed + i * 200, 0.5, 1.5);
+						const orbitOffset = this.seed * (i + 1) + this.generationId;
 						
-						this.ctx.fillStyle = `hsl(${i * 60}, 80%, 60%)`;
+						// Use memory-based organic motion for orbital paths
+						const orbitX = this.getOrganicMotion(time, centerX, orbitRadius, i + 300, rms);
+						const orbitY = this.getOrganicMotion(time, centerY, orbitRadius, i + 400, rms);
+						
+						const x = orbitX + this.getOrganicMotion(time, 0, orbitRadius * 0.3, i + 500, rms);
+						const y = orbitY + this.getOrganicMotion(time, 0, orbitRadius * 0.3, i + 600, rms);
+						
+						const radius = this.getEvolvingParam(20, time, 1.2, 15) + (rms * 40);
+						const hue = this.getEvolvingParam(i * 60, time, 0.4, 60);
+						const saturation = this.getEvolvingParam(80, time, 0.6, 40);
+						const brightness = this.getEvolvingParam(60, time, 0.5, 30);
+						
+						this.ctx.fillStyle = `hsl(${hue}, ${saturation}%, ${brightness}%)`;
 						this.ctx.beginPath();
 						this.ctx.arc(x, y, radius, 0, Math.PI * 2);
 						this.ctx.fill();
 					}
 				}
 
-				private generateWineCountryElements(time: number, rms: number): void {
-					// Vineyard-like elements
-					const numVines = Math.floor(5 + rms * 10);
+				private generateWineCountryElements(time: number, rms: number, seed: number): void {
+					// Vineyard-like elements with memory-based organic motion
+					const baseNumVines = Math.floor(5 + rms * 10);
+					const numVines = this.randomInt(seed, baseNumVines - 2, baseNumVines + 4);
+					
 					for (let i = 0; i < numVines; i++) {
-						const x = this.canvas.width * 0.1 + (i * this.canvas.width * 0.15);
+						const x = this.randomRange(seed + i * 100, this.canvas.width * 0.05, this.canvas.width * 0.95);
 						const startY = this.canvas.height * 0.8;
-						const endY = this.canvas.height * 0.2;
+						const baseEndY = this.randomRange(seed + i * 200, this.canvas.height * 0.1, this.canvas.height * 0.4);
 						
-						this.ctx.strokeStyle = '#8B4513';
-						this.ctx.lineWidth = 2 + rms * 3;
+						// Dramatic growing effect over time
+						const growthProgress = Math.min(1, time / 2); // Vines grow over first 2 seconds
+						const endY = startY - (startY - baseEndY) * growthProgress;
+						
+						this.ctx.strokeStyle = this.randomChoice(seed + i * 300, ['#8B4513', '#A0522D', '#CD853F']);
+						this.ctx.lineWidth = this.getEvolvingParam(2, time, 0.6, 2) + (rms * 3);
 						this.ctx.beginPath();
 						this.ctx.moveTo(x, startY);
 						
-						// Curved vine
+						// Memory-based organic curved vine with natural motion
 						for (let y = startY; y > endY; y -= 20) {
-							const curveX = x + Math.sin(time + i + y * 0.01) * (20 + rms * 50);
+							const curveX = x + this.getOrganicMotion(time, 0, 50 + (rms * 50), i + y * 0.01, rms) + 
+											this.getOrganicMotion(time, 0, 100, i + y * 0.02, rms);
 							this.ctx.lineTo(curveX, y);
 						}
 						this.ctx.stroke();
 						
-						// Leaves
-						if (rms > 0.1) {
-							this.ctx.fillStyle = '#228B22';
+						// Leaves with memory-based organic motion
+						if (rms > 0.1 && growthProgress > 0.2) {
+							const leafColor = this.randomChoice(seed + i * 600, ['#228B22', '#32CD32', '#90EE90']);
+							this.ctx.fillStyle = leafColor;
+							
+							// Multiple leaves per vine with memory-based organic motion
+							const numLeaves = this.randomInt(seed + i * 700, 1, 4);
+							for (let l = 0; l < numLeaves; l++) {
+								const leafY = endY + 50 + l * 40;
+								const leafX = x + this.getOrganicMotion(time, 0, 40, i + l * 100, rms) * (l + 1);
+								const leafSize = this.getEvolvingParam(10, time, 1.0, 8) + (rms * 25);
+								const leafRotation = time * 0.4 + l * 0.5;
+								
+								this.ctx.save();
+								this.ctx.translate(leafX, leafY);
+								this.ctx.rotate(leafRotation);
+								this.ctx.beginPath();
+								this.ctx.ellipse(0, 0, leafSize, leafSize * 0.6, 0, 0, Math.PI * 2);
+								this.ctx.fill();
+								this.ctx.restore();
+							}
+						}
+					}
+					
+					// Floating particles with memory-based organic motion
+					if (rms > 0.12) {
+						const numParticles = this.randomInt(seed + 2000, 5, 12);
+						for (let p = 0; p < numParticles; p++) {
+							const particleX = this.getOrganicMotion(time, this.canvas.width * 0.5, 300, p + 500, rms);
+							const particleY = this.getOrganicMotion(time, this.canvas.height * 0.3, 150, p + 600, rms);
+							const particleSize = this.getEvolvingParam(3, time, 1.2, 3) + (rms * 8);
+							const particleOpacity = this.getEvolvingParam(0.3, time, 0.8, 0.2) + (rms * 0.4);
+							
+							this.ctx.fillStyle = `rgba(255, 255, 255, ${particleOpacity})`;
 							this.ctx.beginPath();
-							this.ctx.ellipse(x, endY + 50, 10 + rms * 20, 5 + rms * 10, 0, 0, Math.PI * 2);
+							this.ctx.arc(particleX, particleY, particleSize, 0, Math.PI * 2);
 							this.ctx.fill();
 						}
 					}
@@ -608,7 +1203,7 @@
 									}
 									
 									const time = frameIndex / fps;
-									this.generateFrame(time, audioAnalysis, stylePreset);
+									this.generateFrame(time, audioAnalysis.rms[frameIndex] || 0.1);
 									
 									if (onProgress) {
 										onProgress(frameIndex + 1, totalFrames);
@@ -659,7 +1254,7 @@
 							}
 							
 							const time = frameIndex / fps;
-							this.generateFrame(time, audioAnalysis, stylePreset);
+							this.generateFrame(time, audioAnalysis.rms[frameIndex] || 0.1);
 							
 							if (onProgress) {
 								onProgress(frameIndex + 1, totalFrames);
@@ -729,6 +1324,174 @@
 						frequencies: frequencies,
 						sampleRate: 44100
 					};
+				}
+
+				// Get truly non-looping chaotic motion using state evolution
+				private getChaoticMotion(time: number, baseValue: number, amplitude: number, elementId: number): number {
+					// Use a chaotic system that never repeats
+					const state1 = (time * 0.3 + elementId * 0.7 + this.generationId * 0.1) % 1;
+					const state2 = (time * 0.7 + elementId * 1.3 + this.generationId * 0.2) % 1;
+					const state3 = (time * 1.1 + elementId * 0.9 + this.generationId * 0.3) % 1;
+					
+					// Chaotic mapping using logistic map-like behavior
+					const chaos1 = state1 * (1 - state1) * 4;
+					const chaos2 = state2 * (1 - state2) * 4;
+					const chaos3 = state3 * (1 - state3) * 4;
+					
+					// Combine chaotic states with evolving weights
+					const weight1 = (time * 0.1 + elementId * 0.3) % 1;
+					const weight2 = (time * 0.2 + elementId * 0.5) % 1;
+					const weight3 = (time * 0.3 + elementId * 0.7) % 1;
+					
+					const motion = (chaos1 * weight1 + chaos2 * weight2 + chaos3 * weight3) / (weight1 + weight2 + weight3);
+					
+					return baseValue + (motion - 0.5) * amplitude * 2;
+				}
+
+				// Get evolving state-based motion that changes behavior over time
+				private getStateBasedMotion(time: number, baseValue: number, amplitude: number, elementId: number): number {
+					// Create evolving states that change behavior
+					const statePhase = Math.floor(time * 0.5 + elementId * 0.2) % 4;
+					const stateProgress = (time * 0.5 + elementId * 0.2) % 1;
+					
+					let motion = 0;
+					
+					switch (statePhase) {
+						case 0: // Linear drift
+							motion = stateProgress * amplitude;
+							break;
+						case 1: // Exponential growth
+							motion = Math.pow(stateProgress, 2) * amplitude;
+							break;
+						case 2: // Logarithmic decay
+							motion = Math.log(stateProgress + 0.1) * amplitude * 0.5;
+							break;
+						case 3: // Random walk
+							const randomWalk = (time * 0.3 + elementId * 0.7) % 1;
+							motion = (randomWalk - 0.5) * amplitude;
+							break;
+					}
+					
+					// Add chaotic perturbation
+					const perturbation = ((time * 0.1 + elementId * 0.3) % 1) * amplitude * 0.3;
+					
+					return baseValue + motion + perturbation;
+				}
+
+				// Get fractal-based motion using recursive patterns
+				private getFractalMotion(time: number, baseValue: number, amplitude: number, elementId: number): number {
+					// Use fractal-like patterns that never repeat exactly
+					const fractal1 = this.getFractalValue(time * 0.3, elementId * 0.5, 3);
+					const fractal2 = this.getFractalValue(time * 0.7, elementId * 1.2, 4);
+					const fractal3 = this.getFractalValue(time * 1.1, elementId * 0.8, 5);
+					
+					// Combine fractals with evolving weights
+					const weight1 = (time * 0.05 + elementId * 0.1) % 1;
+					const weight2 = (time * 0.08 + elementId * 0.2) % 1;
+					const weight3 = (time * 0.12 + elementId * 0.3) % 1;
+					
+					const motion = (fractal1 * weight1 + fractal2 * weight2 + fractal3 * weight3) / (weight1 + weight2 + weight3);
+					
+					return baseValue + motion * amplitude;
+				}
+
+				// Helper function for fractal calculations
+				private getFractalValue(input: number, seed: number, depth: number): number {
+					if (depth <= 0) return 0;
+					
+					const scaled = input * Math.pow(2, depth);
+					const fract = scaled - Math.floor(scaled);
+					const noise = (seed * fract * 1000) % 1;
+					
+					return noise + this.getFractalValue(input, seed * 1.5, depth - 1) * 0.5;
+				}
+
+				// Get cellular automaton-like motion
+				private getCellularMotion(time: number, baseValue: number, amplitude: number, elementId: number): number {
+					// Simulate cellular automaton behavior
+					const cell1 = Math.floor(time * 0.2 + elementId * 0.3) % 256;
+					const cell2 = Math.floor(time * 0.4 + elementId * 0.7) % 256;
+					const cell3 = Math.floor(time * 0.6 + elementId * 1.1) % 256;
+					
+					// Cellular automaton rule (simplified)
+					const rule = (cell1 + cell2 + cell3) % 256;
+					const evolution = (rule * time * 0.1 + elementId * 0.5) % 1;
+					
+					// Add neighborhood effects
+					const neighbor1 = Math.sin(time * 0.3 + elementId * 0.2) * 0.3;
+					const neighbor2 = Math.cos(time * 0.5 + elementId * 0.4) * 0.3;
+					
+					const motion = (evolution + neighbor1 + neighbor2) / 3;
+					
+					return baseValue + (motion - 0.5) * amplitude * 2;
+				}
+
+				// Get particle system motion with collision-like behavior
+				private getParticleMotion(time: number, baseValue: number, amplitude: number, elementId: number): number {
+					// Simulate particle physics with evolving parameters
+					const velocity = (time * 0.2 + elementId * 0.3) % 1;
+					const acceleration = (time * 0.1 + elementId * 0.5) % 1;
+					const friction = 0.95 + (elementId * 0.01) % 0.1;
+					
+					// Particle position with physics simulation
+					let position = velocity * time + 0.5 * acceleration * time * time;
+					position = position % 1; // Wrap around
+					
+					// Add collision-like behavior
+					const collision = Math.floor(time * 0.5 + elementId * 0.7) % 2;
+					if (collision === 1) {
+						position = 1 - position; // Bounce
+					}
+					
+					// Add noise for unpredictability
+					const noise = ((time * 0.3 + elementId * 0.9) % 1) * 0.2;
+					
+					return baseValue + (position - 0.5 + noise) * amplitude * 2;
+				}
+
+				// Get neural network-like motion with evolving weights
+				private getNeuralMotion(time: number, baseValue: number, amplitude: number, elementId: number): number {
+					// Simulate neural network with evolving weights
+					const input1 = (time * 0.2 + elementId * 0.3) % 1;
+					const input2 = (time * 0.4 + elementId * 0.7) % 1;
+					const input3 = (time * 0.6 + elementId * 1.1) % 1;
+					
+					// Evolving weights
+					const weight1 = (time * 0.1 + elementId * 0.2) % 1;
+					const weight2 = (time * 0.15 + elementId * 0.4) % 1;
+					const weight3 = (time * 0.2 + elementId * 0.6) % 1;
+					
+					// Neural activation
+					const activation = Math.tanh(input1 * weight1 + input2 * weight2 + input3 * weight3);
+					
+					// Add evolving bias
+					const bias = (time * 0.05 + elementId * 0.1) % 1;
+					
+					return baseValue + (activation + bias) * amplitude * 0.5;
+				}
+
+				// Get genetic algorithm-like motion with mutation
+				private getGeneticMotion(time: number, baseValue: number, amplitude: number, elementId: number): number {
+					// Simulate genetic algorithm with mutation and crossover
+					const gene1 = (time * 0.3 + elementId * 0.5) % 1;
+					const gene2 = (time * 0.7 + elementId * 1.2) % 1;
+					const gene3 = (time * 1.1 + elementId * 0.8) % 1;
+					
+					// Crossover operation
+					const crossover = (gene1 + gene2) / 2;
+					
+					// Mutation rate that evolves over time
+					const mutationRate = (time * 0.1 + elementId * 0.2) % 0.3;
+					const mutation = ((time * 0.2 + elementId * 0.4) % 1) * mutationRate;
+					
+					// Fitness-based selection
+					const fitness = Math.abs(gene3 - 0.5);
+					const selection = fitness > 0.3 ? gene3 : crossover;
+					
+					// Final motion with mutation
+					const motion = selection + mutation;
+					
+					return baseValue + (motion - 0.5) * amplitude * 2;
 				}
 			}
 

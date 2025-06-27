@@ -23,6 +23,7 @@ export interface VideoConfig {
   duration: number;
   stylePreset: StylePreset;
   audioAnalysis: AudioAnalysis;
+  seed?: number;
 }
 
 export function getFrameProgress(jobId: string): { currentFrame: number, totalFrames: number } | null {
@@ -86,6 +87,31 @@ export class VideoGenerator {
     }
   ];
 
+  // Simple seeded random number generator
+  private seededRandom(seed: number): () => number {
+    let state = seed;
+    return () => {
+      state = (state * 9301 + 49297) % 233280;
+      return state / 233280;
+    };
+  }
+
+  // Get random value between min and max using seeded random
+  private randomRange(seed: number, min: number, max: number): number {
+    const random = this.seededRandom(seed);
+    return min + (random() * (max - min));
+  }
+
+  // Get random integer between min and max using seeded random
+  private randomInt(seed: number, min: number, max: number): number {
+    return Math.floor(this.randomRange(seed, min, max + 1));
+  }
+
+  // Pick random element from array using seeded random
+  private randomChoice<T>(seed: number, array: T[]): T {
+    return array[this.randomInt(seed, 0, array.length - 1)];
+  }
+
   async generateVideo(
     audioPath: string,
     outputPath: string,
@@ -98,13 +124,17 @@ export class VideoGenerator {
       throw new Error(`Style preset "${stylePresetName}" not found`);
     }
 
+    // Generate a unique seed for this video generation
+    const seed = Date.now() + Math.floor(Math.random() * 1000000);
+
     const config: VideoConfig = {
       width: 1920,
       height: 1080,
       fps: 30,
       duration: audioAnalysis.duration,
       stylePreset: preset,
-      audioAnalysis
+      audioAnalysis,
+      seed
     };
 
     // Create frames directory
@@ -155,8 +185,11 @@ export class VideoGenerator {
   }
 
   private generateFrameData(time: number, config: VideoConfig): any {
-    const { stylePreset, audioAnalysis } = config;
+    const { stylePreset, audioAnalysis, seed } = config;
     const frameIndex = Math.floor(time * config.fps);
+    
+    // Ensure seed is always defined
+    const baseSeed = seed || Date.now();
     
     // Get audio data for this frame
     const audioFrameIndex = Math.floor(time * audioAnalysis.sampleRate / 1024);
@@ -170,7 +203,8 @@ export class VideoGenerator {
       rms,
       vocalEnergy,
       frequency,
-      stylePreset
+      stylePreset,
+      baseSeed + frameIndex // Use frame-specific seed for variation
     );
 
     return {
@@ -178,7 +212,8 @@ export class VideoGenerator {
       rms,
       vocalEnergy,
       frequency,
-      visualParams
+      visualParams,
+      seed: baseSeed + frameIndex // Pass seed to visual generation methods
     };
   }
 
@@ -187,53 +222,72 @@ export class VideoGenerator {
     rms: number,
     vocalEnergy: number,
     frequency: number,
-    preset: StylePreset
+    preset: StylePreset,
+    seed: number
   ) {
     const baseHue = (time * 10) % 360;
     const energyMultiplier = 1 + (rms * 2);
     const vocalMultiplier = 1 + (vocalEnergy * 0.5);
 
-    let hue = baseHue;
-    let saturation = 50 + (rms * 100);
-    let brightness = 50 + (vocalEnergy * 30);
+    // Add randomization to base parameters
+    const hueVariation = this.randomRange(seed, -30, 30);
+    const saturationVariation = this.randomRange(seed, -20, 20);
+    const brightnessVariation = this.randomRange(seed, -15, 15);
+
+    let hue = (baseHue + hueVariation) % 360;
+    let saturation = Math.max(20, Math.min(100, 50 + (rms * 100) + saturationVariation));
+    let brightness = Math.max(20, Math.min(80, 50 + (vocalEnergy * 30) + brightnessVariation));
 
     // Apply style-specific modifications
     switch (preset.name) {
       case 'French New Wave':
-        hue = 0; // Black and white
-        saturation = 0;
-        // RMS-reactive brightness with jump cut effect
-        const rmsThreshold = 0.15;
-        const jumpCutIntensity = rms > rmsThreshold ? 1 : 0;
-        brightness = jumpCutIntensity > 0 ? 
-          (20 + (rms * 60)) : // High contrast when RMS is high
-          (10 + (rms * 20));  // Low contrast when RMS is low
-        break;
+        return {
+          hue: 0, // Force black/white
+          saturation: 0,
+          brightness: rms > 0.2 ? 80 : 20,
+          energyMultiplier,
+          motionIntensity: 1 + (rms * 3),
+          jumpCutIntensity: rms > 0.15 ? 0.8 : 0,
+          filmGrainIntensity: 0.3 + (rms * 0.4),
+          contrastMultiplier: 1 + (rms * 2)
+        };
+      
       case "'80s Retro Chromatic":
-        hue = (baseHue + frequency * 0.1) % 360;
-        saturation = 80 + (rms * 20);
-        brightness = 60 + (vocalEnergy * 40);
-        break;
+        return {
+          hue: this.randomChoice(seed, [0, 180, 300, 60]), // Neon colors
+          saturation: 80 + (rms * 20),
+          brightness: 60 + (vocalEnergy * 20),
+          energyMultiplier,
+          motionIntensity: 0.5 + (rms * 2),
+          jumpCutIntensity: 0,
+          filmGrainIntensity: 0.2 + (rms * 0.3),
+          contrastMultiplier: 1.2 + (rms * 1.5)
+        };
+      
       case 'Wine-Country Dreamscape':
-        hue = 30 + (time * 5) % 60; // Warm colors
-        saturation = 40 + (rms * 30);
-        brightness = 70 + (vocalEnergy * 20);
-        break;
+        return {
+          hue: this.randomChoice(seed, [30, 45, 60, 15]), // Earth tones
+          saturation: 40 + (rms * 30),
+          brightness: 50 + (vocalEnergy * 15),
+          energyMultiplier,
+          motionIntensity: 0.3 + (rms * 1),
+          jumpCutIntensity: 0,
+          filmGrainIntensity: 0.1 + (rms * 0.2),
+          contrastMultiplier: 0.8 + (rms * 0.5)
+        };
+      
+      default:
+        return {
+          hue,
+          saturation,
+          brightness,
+          energyMultiplier,
+          motionIntensity: 1 + (rms * 2),
+          jumpCutIntensity: 0,
+          filmGrainIntensity: 0.1 + (rms * 0.2),
+          contrastMultiplier: 1 + (rms * 1)
+        };
     }
-
-    return {
-      hue: Math.max(0, Math.min(360, hue)),
-      saturation: Math.max(0, Math.min(100, saturation)),
-      brightness: Math.max(0, Math.min(100, brightness)),
-      energyMultiplier,
-      vocalMultiplier,
-      motionIntensity: rms * 2,
-      textureIntensity: vocalEnergy * 3,
-      // French New Wave specific parameters
-      jumpCutIntensity: preset.name === 'French New Wave' ? (rms > 0.15 ? 1 : 0) : 0,
-      filmGrainIntensity: preset.name === 'French New Wave' ? (rms * 0.8) : 0,
-      contrastMultiplier: preset.name === 'French New Wave' ? (1 + rms * 2) : 1
-    };
   }
 
   private async renderFrame(frameData: any, outputPath: string, width: number, height: number): Promise<void> {
@@ -305,21 +359,30 @@ export class VideoGenerator {
   }
 
   private generateAudioReactiveCircles(frameData: any, width: number, height: number): string {
-    const { hue, saturation, brightness, energyMultiplier } = frameData;
+    const { hue, saturation, brightness, energyMultiplier, seed } = frameData;
     const circles = [];
     
-    for (let i = 0; i < 5; i++) {
-      const x = (width * 0.2) + (i * width * 0.15);
-      const y = height * 0.5 + Math.sin(frameData.time + i) * 50;
-      const radius = 20 + (energyMultiplier * 30);
-      const opacity = 0.3 + (energyMultiplier * 0.4);
+    // Randomize number of circles
+    const numCircles = this.randomInt(seed, 3, 8);
+    
+    for (let i = 0; i < numCircles; i++) {
+      // Randomize positions with seeded randomness
+      const baseX = this.randomRange(seed + i * 100, width * 0.1, width * 0.9);
+      const baseY = this.randomRange(seed + i * 200, height * 0.1, height * 0.9);
+      const x = baseX + Math.sin(frameData.time + i) * this.randomRange(seed + i * 300, 20, 80);
+      const y = baseY + Math.cos(frameData.time + i * 2) * this.randomRange(seed + i * 400, 20, 80);
+      
+      // Randomize circle properties
+      const radius = this.randomRange(seed + i * 500, 15, 25) + (energyMultiplier * 30);
+      const opacity = this.randomRange(seed + i * 600, 0.2, 0.4) + (energyMultiplier * 0.4);
+      const hueOffset = this.randomRange(seed + i * 700, -60, 60);
       
       circles.push(`
         <circle 
           cx="${x}" 
           cy="${y}" 
           r="${radius}" 
-          fill="hsl(${hue + i * 30}, ${saturation}%, ${brightness}%)" 
+          fill="hsl(${hue + hueOffset}, ${saturation}%, ${brightness}%)" 
           opacity="${opacity}"
         />
       `);
@@ -329,13 +392,19 @@ export class VideoGenerator {
   }
 
   private generateAudioReactiveLines(frameData: any, width: number, height: number): string {
-    const { hue, saturation, brightness, motionIntensity } = frameData;
+    const { hue, saturation, brightness, motionIntensity, seed } = frameData;
     const lines = [];
     
-    for (let i = 0; i < 3; i++) {
-      const y1 = height * 0.3 + (i * height * 0.2);
-      const y2 = y1 + Math.sin(frameData.time + i) * 100;
-      const strokeWidth = 2 + (motionIntensity * 3);
+    // Randomize number of lines
+    const numLines = this.randomInt(seed, 2, 6);
+    
+    for (let i = 0; i < numLines; i++) {
+      // Randomize line positions and properties
+      const y1 = this.randomRange(seed + i * 100, height * 0.1, height * 0.9);
+      const y2 = y1 + Math.sin(frameData.time + i) * this.randomRange(seed + i * 200, 50, 150);
+      const strokeWidth = this.randomRange(seed + i * 300, 1, 3) + (motionIntensity * 3);
+      const hueOffset = this.randomRange(seed + i * 400, -90, 90);
+      const opacity = this.randomRange(seed + i * 500, 0.5, 0.9);
       
       lines.push(`
         <line 
@@ -343,9 +412,9 @@ export class VideoGenerator {
           y1="${y1}" 
           x2="${width}" 
           y2="${y2}" 
-          stroke="hsl(${hue + i * 60}, ${saturation}%, ${brightness}%)" 
+          stroke="hsl(${hue + hueOffset}, ${saturation}%, ${brightness}%)" 
           stroke-width="${strokeWidth}"
-          opacity="0.7"
+          opacity="${opacity}"
         />
       `);
     }
@@ -354,22 +423,29 @@ export class VideoGenerator {
   }
 
   private generateFrenchNewWaveCircles(frameData: any, width: number, height: number): string {
-    const { rms, jumpCutIntensity, contrastMultiplier } = frameData;
+    const { rms, jumpCutIntensity, contrastMultiplier, seed } = frameData;
     const circles = [];
     
-    // RMS-reactive number of circles
-    const numCircles = Math.floor(3 + (rms * 8));
+    // RMS-reactive number of circles with randomization
+    const baseNumCircles = Math.floor(3 + (rms * 8));
+    const numCircles = this.randomInt(seed, baseNumCircles - 1, baseNumCircles + 2);
     
     for (let i = 0; i < numCircles; i++) {
       // Jump cut effect: circles appear/disappear based on RMS
-      if (jumpCutIntensity > 0 || Math.random() > 0.3) {
-        const x = (width * 0.1) + (i * width * 0.2) + (rms * 100 * Math.sin(frameData.time + i));
-        const y = height * 0.3 + (i * height * 0.15) + (rms * 50 * Math.cos(frameData.time + i * 2));
-        const radius = 15 + (rms * 40) + (jumpCutIntensity * 20);
-        const opacity = 0.2 + (rms * 0.6) + (jumpCutIntensity * 0.3);
+      if (jumpCutIntensity > 0 || this.randomRange(seed + i * 100, 0, 1) > 0.3) {
+        // Randomize positions more dramatically
+        const baseX = this.randomRange(seed + i * 200, width * 0.05, width * 0.95);
+        const baseY = this.randomRange(seed + i * 300, height * 0.05, height * 0.95);
+        const x = baseX + (rms * 100 * Math.sin(frameData.time + i));
+        const y = baseY + (rms * 50 * Math.cos(frameData.time + i * 2));
         
-        // High contrast black/white based on RMS
-        const fillColor = rms > 0.2 ? '#ffffff' : '#000000';
+        // Randomize circle properties
+        const radius = this.randomRange(seed + i * 400, 10, 20) + (rms * 40) + (jumpCutIntensity * 20);
+        const opacity = this.randomRange(seed + i * 500, 0.1, 0.3) + (rms * 0.6) + (jumpCutIntensity * 0.3);
+        
+        // High contrast black/white based on RMS with randomization
+        const threshold = this.randomRange(seed + i * 600, 0.15, 0.25);
+        const fillColor = rms > threshold ? '#ffffff' : '#000000';
         
         circles.push(`
           <circle 
@@ -378,8 +454,8 @@ export class VideoGenerator {
             r="${radius}" 
             fill="${fillColor}" 
             opacity="${opacity}"
-            stroke="${rms > 0.15 ? '#000000' : '#ffffff'}"
-            stroke-width="${1 + (rms * 3)}"
+            stroke="${rms > threshold ? '#000000' : '#ffffff'}"
+            stroke-width="${this.randomRange(seed + i * 700, 0.5, 2) + (rms * 3)}"
           />
         `);
       }
@@ -389,22 +465,25 @@ export class VideoGenerator {
   }
 
   private generateFrenchNewWaveLines(frameData: any, width: number, height: number): string {
-    const { rms, jumpCutIntensity, contrastMultiplier } = frameData;
+    const { rms, jumpCutIntensity, contrastMultiplier, seed } = frameData;
     const lines = [];
     
-    // RMS-reactive number of lines
-    const numLines = Math.floor(2 + (rms * 6));
+    // RMS-reactive number of lines with randomization
+    const baseNumLines = Math.floor(2 + (rms * 6));
+    const numLines = this.randomInt(seed, baseNumLines - 1, baseNumLines + 2);
     
     for (let i = 0; i < numLines; i++) {
       // Jump cut effect: lines appear/disappear based on RMS
-      if (jumpCutIntensity > 0 || Math.random() > 0.4) {
-        const y1 = height * 0.2 + (i * height * 0.25);
-        const y2 = y1 + Math.sin(frameData.time + i) * (50 + rms * 150);
-        const strokeWidth = 1 + (rms * 5) + (jumpCutIntensity * 3);
-        const opacity = 0.3 + (rms * 0.5) + (jumpCutIntensity * 0.4);
+      if (jumpCutIntensity > 0 || this.randomRange(seed + i * 100, 0, 1) > 0.4) {
+        // Randomize line positions and properties
+        const y1 = this.randomRange(seed + i * 200, height * 0.1, height * 0.9);
+        const y2 = y1 + Math.sin(frameData.time + i) * this.randomRange(seed + i * 300, 30, 200);
+        const strokeWidth = this.randomRange(seed + i * 400, 0.5, 2) + (rms * 5) + (jumpCutIntensity * 3);
+        const opacity = this.randomRange(seed + i * 500, 0.2, 0.5) + (rms * 0.5) + (jumpCutIntensity * 0.4);
         
-        // High contrast black/white based on RMS
-        const strokeColor = rms > 0.18 ? '#ffffff' : '#000000';
+        // High contrast black/white based on RMS with randomization
+        const threshold = this.randomRange(seed + i * 600, 0.15, 0.22);
+        const strokeColor = rms > threshold ? '#ffffff' : '#000000';
         
         lines.push(`
           <line 
@@ -424,50 +503,91 @@ export class VideoGenerator {
   }
 
   private generateFrenchNewWaveElements(frameData: any, width: number, height: number): string {
-    const { rms, jumpCutIntensity, filmGrainIntensity } = frameData;
+    const { rms, jumpCutIntensity, filmGrainIntensity, seed } = frameData;
     const elements = [];
     
-    // RMS-reactive geometric shapes
+    // RMS-reactive geometric shapes with randomization
     if (rms > 0.12) {
       // High RMS: add sharp geometric elements
-      const numShapes = Math.floor(2 + (rms * 4));
+      const baseNumShapes = Math.floor(2 + (rms * 4));
+      const numShapes = this.randomInt(seed, baseNumShapes - 1, baseNumShapes + 2);
       
       for (let i = 0; i < numShapes; i++) {
-        const x = width * 0.2 + (i * width * 0.3);
-        const y = height * 0.4 + (i * height * 0.2);
-        const size = 20 + (rms * 60);
-        const opacity = 0.4 + (rms * 0.4);
+        // Randomize shape positions
+        const x = this.randomRange(seed + i * 100, width * 0.1, width * 0.9);
+        const y = this.randomRange(seed + i * 200, height * 0.1, height * 0.9);
+        const size = this.randomRange(seed + i * 300, 15, 25) + (rms * 60);
+        const opacity = this.randomRange(seed + i * 400, 0.3, 0.5) + (rms * 0.4);
         
-        // Alternating triangles and rectangles
-        if (i % 2 === 0) {
+        // Randomize shape types and properties
+        const shapeType = this.randomInt(seed + i * 500, 0, 3); // 0: triangle, 1: rectangle, 2: circle, 3: polygon
+        const threshold = this.randomRange(seed + i * 600, 0.15, 0.25);
+        
+        if (shapeType === 0) {
+          // Triangle
           elements.push(`
             <polygon 
               points="${x-size},${y+size} ${x+size},${y+size} ${x},${y-size}" 
-              fill="${rms > 0.2 ? '#ffffff' : '#000000'}" 
+              fill="${rms > threshold ? '#ffffff' : '#000000'}" 
               opacity="${opacity}"
-              stroke="${rms > 0.2 ? '#000000' : '#ffffff'}"
-              stroke-width="${1 + (rms * 2)}"
+              stroke="${rms > threshold ? '#000000' : '#ffffff'}"
+              stroke-width="${this.randomRange(seed + i * 700, 0.5, 2) + (rms * 2)}"
             />
           `);
-        } else {
+        } else if (shapeType === 1) {
+          // Rectangle
           elements.push(`
             <rect 
               x="${x-size}" 
               y="${y-size}" 
               width="${size*2}" 
               height="${size*2}" 
-              fill="${rms > 0.2 ? '#000000' : '#ffffff'}" 
+              fill="${rms > threshold ? '#000000' : '#ffffff'}" 
               opacity="${opacity}"
-              stroke="${rms > 0.2 ? '#ffffff' : '#000000'}"
-              stroke-width="${1 + (rms * 2)}"
+              stroke="${rms > threshold ? '#ffffff' : '#000000'}"
+              stroke-width="${this.randomRange(seed + i * 700, 0.5, 2) + (rms * 2)}"
+            />
+          `);
+        } else if (shapeType === 2) {
+          // Circle
+          elements.push(`
+            <circle 
+              cx="${x}" 
+              cy="${y}" 
+              r="${size}" 
+              fill="${rms > threshold ? '#ffffff' : '#000000'}" 
+              opacity="${opacity}"
+              stroke="${rms > threshold ? '#000000' : '#ffffff'}"
+              stroke-width="${this.randomRange(seed + i * 700, 0.5, 2) + (rms * 2)}"
+            />
+          `);
+        } else {
+          // Polygon (star-like)
+          const points = [];
+          const numPoints = this.randomInt(seed + i * 800, 5, 8);
+          for (let j = 0; j < numPoints; j++) {
+            const angle = (j * 2 * Math.PI) / numPoints;
+            const radius = j % 2 === 0 ? size : size * 0.5;
+            const px = x + radius * Math.cos(angle);
+            const py = y + radius * Math.sin(angle);
+            points.push(`${px},${py}`);
+          }
+          elements.push(`
+            <polygon 
+              points="${points.join(' ')}" 
+              fill="${rms > threshold ? '#000000' : '#ffffff'}" 
+              opacity="${opacity}"
+              stroke="${rms > threshold ? '#ffffff' : '#000000'}"
+              stroke-width="${this.randomRange(seed + i * 700, 0.5, 2) + (rms * 2)}"
             />
           `);
         }
       }
     }
     
-    // Jump cut flash effect
+    // Jump cut flash effect with randomization
     if (jumpCutIntensity > 0) {
+      const flashOpacity = this.randomRange(seed, 0.05, 0.15);
       elements.push(`
         <rect 
           x="0" 
@@ -475,7 +595,7 @@ export class VideoGenerator {
           width="${width}" 
           height="${height}" 
           fill="#ffffff" 
-          opacity="0.1"
+          opacity="${flashOpacity}"
         />
       `);
     }
