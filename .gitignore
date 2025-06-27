@@ -37,6 +37,12 @@ uploads/
 *.jpg
 *.jpeg
 
+# Exceptions for public assets
+!public/*.mp3
+!public/*.png
+!public/*.jpg
+!public/*.jpeg
+
 # IDE files
 .vscode/
 .idea/
