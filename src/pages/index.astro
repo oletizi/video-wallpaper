@@ -706,12 +706,30 @@
 					return state1 + (state2 - state1) * morph;
 				}
 
-				// Method to update the preview canvas with the current frame
+				// Update the preview canvas with the current frame
 				private updatePreview(): void {
 					if (this.previewCtx && this.previewCanvas) {
-						// Copy the current frame to the preview canvas
+						// Clear the preview canvas
 						this.previewCtx.clearRect(0, 0, this.previewCanvas.width, this.previewCanvas.height);
-						this.previewCtx.drawImage(this.canvas, 0, 0, this.previewCanvas.width, this.previewCanvas.height);
+						
+						// Scale the main canvas to fit the preview canvas
+						const scaleX = this.previewCanvas.width / this.canvas.width;
+						const scaleY = this.previewCanvas.height / this.canvas.height;
+						const scale = Math.min(scaleX, scaleY);
+						
+						// Calculate centered position
+						const scaledWidth = this.canvas.width * scale;
+						const scaledHeight = this.canvas.height * scale;
+						const x = (this.previewCanvas.width - scaledWidth) / 2;
+						const y = (this.previewCanvas.height - scaledHeight) / 2;
+						
+						// Draw the main canvas onto the preview canvas
+						this.previewCtx.drawImage(
+							this.canvas,
+							x, y,
+							scaledWidth,
+							scaledHeight
+						);
 					}
 				}
 
@@ -834,6 +852,9 @@
 					} else if (this.style === 'wine-country') {
 						this.generateWineCountryElements(time, rms, seed);
 					}
+					
+					// Update the preview canvas
+					this.updatePreview();
 				}
 
 				private generateFrenchNewWaveElements(time: number, rms: number, seed: number): void {
