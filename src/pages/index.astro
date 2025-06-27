@@ -8,41 +8,261 @@
 		<title>Video Wallpaper Generator</title>
 	</head>
 	<body style="font-family: system-ui, sans-serif; background: #18181b; color: #fff; margin: 0;">
-		<main style="max-width: 600px; margin: 3rem auto; padding: 2rem; background: #23232a; border-radius: 1rem; box-shadow: 0 2px 16px #0002;">
+		<main style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: #23232a; border-radius: 1rem; box-shadow: 0 2px 16px #0002;">
 			<h1 style="font-size: 2.5rem; margin-bottom: 0.5em;">Video Wallpaper Generator</h1>
 			<p style="font-size: 1.2rem; margin-bottom: 2em;">
 				Transform your podcast or radio show audio into YouTube-ready video with evolving, ambient visuals and automated branding overlays.
 			</p>
-			<ol style="margin-bottom: 2em;">
-				<li>Upload your audio file (WAV/MP3, ≤ 250 MB)</li>
-				<li>Enter episode details (optional)</li>
-				<li>Select a visual style preset</li>
-				<li>Preview a 15-second sample</li>
-				<li>Approve or regenerate</li>
-				<li>Render and download your full video</li>
-			</ol>
-			<form style="display: flex; flex-direction: column; gap: 1.5em;">
-				<label>
-					<strong>Audio File</strong>
-					<input type="file" accept="audio/wav,audio/mp3" style="margin-top: 0.5em;" />
-				</label>
-				<label>
-					<strong>Episode Title</strong>
-					<input type="text" placeholder="Optional" style="margin-top: 0.5em; width: 100%;" />
-				</label>
-				<label>
-					<strong>Style Preset</strong>
-					<select style="margin-top: 0.5em; width: 100%;">
-						<option>French New Wave</option>
-						<option>'80s Retro Chromatic</option>
-						<option>Wine-Country Dreamscape</option>
+			
+			<div id="workflow" style="margin-bottom: 2em;">
+				<h3>Workflow:</h3>
+				<ol>
+					<li>Upload your audio file (WAV/MP3, ≤ 250 MB)</li>
+					<li>Enter episode details (optional)</li>
+					<li>Select a visual style preset</li>
+					<li>Preview a 15-second sample</li>
+					<li>Approve or regenerate</li>
+					<li>Render and download your full video</li>
+				</ol>
+			</div>
+
+			<form id="uploadForm" style="display: flex; flex-direction: column; gap: 1.5em;">
+				<div>
+					<label for="audioFile">
+						<strong>Audio File</strong>
+					</label>
+					<input 
+						type="file" 
+						id="audioFile" 
+						name="audio" 
+						accept="audio/wav,audio/mp3" 
+						style="margin-top: 0.5em; width: 100%;" 
+						required
+					/>
+					<div id="fileInfo" style="margin-top: 0.5em; font-size: 0.9em; color: #aaa;"></div>
+				</div>
+
+				<div>
+					<label for="title">
+						<strong>Episode Title</strong>
+					</label>
+					<input 
+						type="text" 
+						id="title" 
+						name="title" 
+						placeholder="Enter episode title" 
+						style="margin-top: 0.5em; width: 100%; padding: 0.5em;" 
+					/>
+				</div>
+
+				<div>
+					<label for="guest">
+						<strong>Guest (Optional)</strong>
+					</label>
+					<input 
+						type="text" 
+						id="guest" 
+						name="guest" 
+						placeholder="Guest name" 
+						style="margin-top: 0.5em; width: 100%; padding: 0.5em;" 
+					/>
+				</div>
+
+				<div>
+					<label for="sponsor">
+						<strong>Sponsor (Optional)</strong>
+					</label>
+					<input 
+						type="text" 
+						id="sponsor" 
+						name="sponsor" 
+						placeholder="Sponsor name" 
+						style="margin-top: 0.5em; width: 100%; padding: 0.5em;" 
+					/>
+				</div>
+
+				<div>
+					<label for="stylePreset">
+						<strong>Style Preset</strong>
+					</label>
+					<select 
+						id="stylePreset" 
+						name="stylePreset" 
+						style="margin-top: 0.5em; width: 100%; padding: 0.5em;"
+					>
+						<option value="French New Wave">French New Wave</option>
+						<option value="'80s Retro Chromatic">'80s Retro Chromatic</option>
+						<option value="Wine-Country Dreamscape">Wine-Country Dreamscape</option>
 					</select>
-				</label>
-				<button type="button" style="padding: 0.75em 2em; font-size: 1.1em; background: #6366f1; color: #fff; border: none; border-radius: 0.5em; cursor: pointer;">Preview Sample</button>
+				</div>
+
+				<button 
+					type="submit" 
+					id="submitBtn"
+					style="padding: 0.75em 2em; font-size: 1.1em; background: #6366f1; color: #fff; border: none; border-radius: 0.5em; cursor: pointer;"
+				>
+					Generate Video
+				</button>
 			</form>
+
+			<div id="status" style="margin-top: 2em; display: none;">
+				<h3>Processing Status:</h3>
+				<div id="statusText" style="color: #10b981;"></div>
+				<div id="progress" style="margin-top: 1em;">
+					<div id="progressBar" style="width: 0%; height: 20px; background: #6366f1; border-radius: 10px; transition: width 0.3s;"></div>
+				</div>
+			</div>
+
+			<div id="results" style="margin-top: 2em; display: none;">
+				<h3>Results:</h3>
+				<div id="videoInfo" style="background: #1f1f23; padding: 1em; border-radius: 0.5em; margin-bottom: 1em;"></div>
+				<div style="display: flex; gap: 1em;">
+					<button id="downloadBtn" style="padding: 0.5em 1em; background: #10b981; color: #fff; border: none; border-radius: 0.5em; cursor: pointer;">
+						Download Video
+					</button>
+					<button id="youtubeBtn" style="padding: 0.5em 1em; background: #ef4444; color: #fff; border: none; border-radius: 0.5em; cursor: pointer;">
+						Upload to YouTube
+					</button>
+				</div>
+			</div>
+
 			<div style="margin-top: 2em; color: #aaa; font-size: 0.95em;">
-				<p><em>Note: This is an MVP prototype. Video rendering and AI visuals are not yet implemented.</em></p>
+				<p><em>Note: This is an MVP prototype. Video rendering and AI visuals are simulated for demonstration.</em></p>
 			</div>
 		</main>
+
+		<script>
+			const form = document.getElementById('uploadForm') as HTMLFormElement;
+			const fileInput = document.getElementById('audioFile') as HTMLInputElement;
+			const fileInfo = document.getElementById('fileInfo') as HTMLDivElement;
+			const status = document.getElementById('status') as HTMLDivElement;
+			const statusText = document.getElementById('statusText') as HTMLDivElement;
+			const progressBar = document.getElementById('progressBar') as HTMLDivElement;
+			const results = document.getElementById('results') as HTMLDivElement;
+			const videoInfo = document.getElementById('videoInfo') as HTMLDivElement;
+			const downloadBtn = document.getElementById('downloadBtn') as HTMLButtonElement;
+			const youtubeBtn = document.getElementById('youtubeBtn') as HTMLButtonElement;
+
+			let currentVideoPath: string = '';
+			let currentVideoUrl: string = '';
+
+			// File validation
+			fileInput.addEventListener('change', (e) => {
+				const file = (e.target as HTMLInputElement).files?.[0];
+				if (file) {
+					const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+					fileInfo.textContent = `File: ${file.name} (${sizeMB} MB)`;
+					
+					if (file.size > 250 * 1024 * 1024) {
+						fileInfo.style.color = '#ef4444';
+						fileInfo.textContent += ' - File too large (max 250MB)';
+					} else {
+						fileInfo.style.color = '#10b981';
+					}
+				}
+			});
+
+			// Form submission
+			form.addEventListener('submit', async (e) => {
+				e.preventDefault();
+				
+				const formData = new FormData(form);
+				const file = fileInput.files?.[0];
+				
+				if (!file) {
+					alert('Please select an audio file');
+					return;
+				}
+
+				if (file.size > 250 * 1024 * 1024) {
+					alert('File size exceeds 250MB limit');
+					return;
+				}
+
+				// Show status
+				status.style.display = 'block';
+				results.style.display = 'none';
+				progressBar.style.width = '0%';
+				statusText.textContent = 'Uploading and processing...';
+				statusText.style.color = '#10b981';
+				
+				try {
+					// Upload to backend
+					const response = await fetch('/api/upload', {
+						method: 'POST',
+						body: formData
+					});
+					const result = await response.json();
+					if (!result.success) throw result.error || 'Unknown error';
+
+					currentVideoPath = result.videoPath;
+					currentVideoUrl = result.videoPath.replace(process.cwd(), '').replace(/^\/+/, '/');
+
+					// Show results
+					showResults(result);
+				} catch (error) {
+					statusText.textContent = `Error: ${error}`;
+					statusText.style.color = '#ef4444';
+				}
+			});
+
+			function showResults(result: any) {
+				const title = (document.getElementById('title') as HTMLInputElement).value || 'Untitled Episode';
+				const duration = Math.floor(result.duration || (Math.random() * 60) + 30); // fallback for demo
+				
+				videoInfo.innerHTML = `
+					<h4>${title}</h4>
+					<p>Duration: ${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}</p>
+					<p>Resolution: 1920x1080 (1080p)</p>
+					<p>Format: MP4</p>
+				`;
+				
+				results.style.display = 'block';
+			}
+
+			// Download button
+			downloadBtn.addEventListener('click', () => {
+				if (currentVideoPath) {
+					const fileName = currentVideoPath.split('/').pop() || 'video.mp4';
+					const a = document.createElement('a');
+					a.href = `/api/download?file=${encodeURIComponent(fileName)}`;
+					a.download = fileName;
+					document.body.appendChild(a);
+					a.click();
+					document.body.removeChild(a);
+				} else {
+					alert('No video available for download.');
+				}
+			});
+
+			// YouTube upload button
+			youtubeBtn.addEventListener('click', async () => {
+				try {
+					const response = await fetch('/api/youtube-upload', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							videoPath: currentVideoPath,
+							title: (document.getElementById('title') as HTMLInputElement).value || 'Untitled Video',
+							description: 'Generated with Video Wallpaper Generator',
+							tags: ['podcast', 'audio', 'video wallpaper'],
+							privacyStatus: 'private'
+						})
+					});
+
+					const result = await response.json();
+					
+					if (result.success) {
+						alert(`Video uploaded to YouTube! ID: ${result.videoId}`);
+					} else if (result.authUrl) {
+						alert('YouTube authentication required. Please set up your credentials.');
+					} else {
+						alert(`Upload failed: ${result.error}`);
+					}
+				} catch (error) {
+					alert(`Upload error: ${error}`);
+				}
+			});
+		</script>
 	</body>
 </html>

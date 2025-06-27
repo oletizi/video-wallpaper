@@ -1,5 +1,7 @@
 # build output
 dist/
+.output/
+
 # generated types
 .astro/
 
@@ -12,7 +14,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-
 # environment variables
 .env
 .env.production
@@ -20,5 +21,27 @@ pnpm-debug.log*
 # macOS-specific files
 .DS_Store
 
-# jetbrains setting folder
+# Temporary files
+temp/
+uploads/
+*.tmp
+*.temp
+
+# Video processing files
+*.mp4
+*.avi
+*.mov
+*.wav
+*.mp3
+*.png
+*.jpg
+*.jpeg
+
+# IDE files
+.vscode/
 .idea/
+*.swp
+*.swo
+
+# OS generated files
+Thumbs.db
