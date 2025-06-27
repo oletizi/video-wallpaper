@@ -6,6 +6,12 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>Video Wallpaper Generator</title>
+		<style>
+			@keyframes spin {
+				0% { transform: rotate(0deg); }
+				100% { transform: rotate(360deg); }
+			}
+		</style>
 	</head>
 	<body style="font-family: system-ui, sans-serif; background: #18181b; color: #fff; margin: 0;">
 		<main style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: #23232a; border-radius: 1rem; box-shadow: 0 2px 16px #0002;">
@@ -24,6 +30,20 @@
 					<li>Approve or regenerate</li>
 					<li>Render and download your full video</li>
 				</ol>
+			</div>
+
+			<div style="margin-bottom: 2em; padding: 1.5em; background: #1f1f23; border-radius: 0.5em; border: 1px solid #333;">
+				<h3 style="margin-top: 0; color: #6366f1;">Quick Test</h3>
+				<p style="margin-bottom: 1em; color: #aaa;">
+					Generate a sample video with pre-configured settings to test the system.
+				</p>
+				<button 
+					id="testVideoBtn"
+					style="padding: 0.75em 1.5em; font-size: 1em; background: #6366f1; color: #fff; border: none; border-radius: 0.5em; cursor: pointer; margin-right: 1em;"
+				>
+					🎬 Generate Test Video
+				</button>
+				<span style="color: #aaa; font-size: 0.9em;">Creates a 10-second sample with default settings</span>
 			</div>
 
 			<form id="uploadForm" style="display: flex; flex-direction: column; gap: 1.5em;">
@@ -122,6 +142,23 @@
 			<div id="results" style="margin-top: 2em; display: none;">
 				<h3>Results:</h3>
 				<div id="videoInfo" style="background: #1f1f23; padding: 1em; border-radius: 0.5em; margin-bottom: 1em;"></div>
+				
+				<!-- Video Player -->
+				<div id="videoPlayerContainer" style="margin-bottom: 1em; background: #1f1f23; border-radius: 0.5em; overflow: hidden; border: 1px solid #333;">
+					<div id="videoLoadingIndicator" style="display: none; text-align: center; padding: 2em; color: #6366f1;">
+						<div style="margin-bottom: 1em;">🎬 Loading video...</div>
+						<div style="width: 40px; height: 40px; border: 3px solid #333; border-top: 3px solid #6366f1; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+					</div>
+					<video 
+						id="videoPlayer" 
+						controls 
+						style="width: 100%; max-width: 100%; height: auto; display: block; background: #000;"
+						preload="metadata"
+					>
+						Your browser does not support the video tag.
+					</video>
+				</div>
+				
 				<div style="display: flex; gap: 1em;">
 					<button id="downloadBtn" style="padding: 0.5em 1em; background: #10b981; color: #fff; border: none; border-radius: 0.5em; cursor: pointer;">
 						Download Video
@@ -151,10 +188,431 @@
 			const downloadBtn = document.getElementById('downloadBtn') as HTMLButtonElement;
 			const youtubeBtn = document.getElementById('youtubeBtn') as HTMLButtonElement;
 			const frameCountIndicator = document.getElementById('frameCountIndicator') as HTMLDivElement;
+			const testVideoBtn = document.getElementById('testVideoBtn') as HTMLButtonElement;
+			const videoPlayer = document.getElementById('videoPlayer') as HTMLVideoElement;
+			const videoLoadingIndicator = document.getElementById('videoLoadingIndicator') as HTMLDivElement;
 
 			let currentVideoPath: string = '';
 			let currentVideoUrl: string = '';
 			let currentJobId: string = '';
+
+			// Browser-based video generation
+			class BrowserVideoGenerator {
+				private canvas: HTMLCanvasElement;
+				private ctx: CanvasRenderingContext2D;
+				private audioContext: AudioContext | null = null;
+				private audioData: Float32Array | null = null;
+				private sampleRate: number = 44100;
+
+				constructor() {
+					this.canvas = document.createElement('canvas');
+					this.canvas.width = 1920;
+					this.canvas.height = 1080;
+					this.ctx = this.canvas.getContext('2d')!;
+				}
+
+				async analyzeAudio(audioFile: File): Promise<any> {
+					console.log('Analyzing audio in browser...');
+					
+					// Create audio context
+					this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+					
+					// Resume audio context if suspended (required for autoplay policies)
+					if (this.audioContext.state === 'suspended') {
+						await this.audioContext.resume();
+					}
+					
+					// Load audio file
+					const arrayBuffer = await audioFile.arrayBuffer();
+					const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+					
+					// Extract audio data
+					const channelData = audioBuffer.getChannelData(0);
+					this.audioData = channelData;
+					this.sampleRate = audioBuffer.sampleRate;
+					
+					// Calculate RMS values (simplified analysis)
+					const rmsValues = [];
+					const segmentSize = Math.floor(channelData.length / 100);
+					
+					for (let i = 0; i < 100; i++) {
+						const start = i * segmentSize;
+						const end = Math.min(start + segmentSize, channelData.length);
+						let sum = 0;
+						
+						for (let j = start; j < end; j++) {
+							sum += channelData[j] * channelData[j];
+						}
+						
+						const rms = Math.sqrt(sum / (end - start));
+						rmsValues.push(rms);
+					}
+					
+					return {
+						duration: audioBuffer.duration,
+						rms: rmsValues,
+						vocalEnergy: rmsValues.map(r => Math.min(1, r * 2)), // Simplified
+						frequencies: rmsValues.map(() => 150), // Simplified
+						sampleRate: this.sampleRate
+					};
+				}
+
+				generateFrame(time: number, audioAnalysis: any, stylePreset: string): void {
+					const fps = 30;
+					const frameIndex = Math.floor(time * fps);
+					const audioFrameIndex = Math.floor(time * audioAnalysis.sampleRate / 1024);
+					const rms = audioAnalysis.rms[audioFrameIndex] || 0.1;
+					
+					// Clear canvas
+					this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+					
+					// Generate background based on style preset
+					this.generateBackground(rms, stylePreset);
+					
+					// Generate visual elements based on style preset
+					this.generateVisualElements(time, rms, stylePreset);
+				}
+
+				private generateBackground(rms: number, stylePreset: string): void {
+					if (stylePreset === 'French New Wave') {
+						// French New Wave: Black and white with RMS-reactive contrast
+						const brightness = rms > 0.15 ? (20 + rms * 60) : (10 + rms * 20);
+						const color = `rgb(${brightness}%, ${brightness}%, ${brightness}%)`;
+						this.ctx.fillStyle = color;
+						this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+					} else if (stylePreset === "'80s Retro Chromatic") {
+						// 80s Retro: Colorful gradient
+						const hue = (Date.now() * 0.1) % 360;
+						const gradient = this.ctx.createLinearGradient(0, 0, this.canvas.width, this.canvas.height);
+						gradient.addColorStop(0, `hsl(${hue}, 80%, 60%)`);
+						gradient.addColorStop(1, `hsl(${hue + 180}, 80%, 60%)`);
+						this.ctx.fillStyle = gradient;
+						this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+					} else {
+						// Wine Country: Warm colors
+						const gradient = this.ctx.createRadialGradient(
+							this.canvas.width / 2, this.canvas.height / 2, 0,
+							this.canvas.width / 2, this.canvas.height / 2, this.canvas.width / 2
+						);
+						gradient.addColorStop(0, '#DAA520');
+						gradient.addColorStop(1, '#8B4513');
+						this.ctx.fillStyle = gradient;
+						this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+					}
+				}
+
+				private generateVisualElements(time: number, rms: number, stylePreset: string): void {
+					if (stylePreset === 'French New Wave') {
+						this.generateFrenchNewWaveElements(time, rms);
+					} else if (stylePreset === "'80s Retro Chromatic") {
+						this.generateRetroElements(time, rms);
+					} else {
+						this.generateWineCountryElements(time, rms);
+					}
+				}
+
+				private generateFrenchNewWaveElements(time: number, rms: number): void {
+					// Jump cut effect
+					if (rms > 0.15) {
+						// Flash effect
+						this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+						this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+					}
+					
+					// Geometric shapes
+					const numShapes = Math.floor(2 + rms * 4);
+					for (let i = 0; i < numShapes; i++) {
+						const x = this.canvas.width * 0.2 + (i * this.canvas.width * 0.3);
+						const y = this.canvas.height * 0.4 + (i * this.canvas.height * 0.2);
+						const size = 20 + rms * 60;
+						
+						this.ctx.fillStyle = rms > 0.2 ? '#ffffff' : '#000000';
+						this.ctx.strokeStyle = rms > 0.2 ? '#000000' : '#ffffff';
+						this.ctx.lineWidth = 1 + rms * 2;
+						
+						if (i % 2 === 0) {
+							// Triangle
+							this.ctx.beginPath();
+							this.ctx.moveTo(x, y - size);
+							this.ctx.lineTo(x - size, y + size);
+							this.ctx.lineTo(x + size, y + size);
+							this.ctx.closePath();
+							this.ctx.fill();
+							this.ctx.stroke();
+						} else {
+							// Rectangle
+							this.ctx.fillRect(x - size, y - size, size * 2, size * 2);
+							this.ctx.strokeRect(x - size, y - size, size * 2, size * 2);
+						}
+					}
+					
+					// Lines
+					const numLines = Math.floor(2 + rms * 6);
+					for (let i = 0; i < numLines; i++) {
+						const y1 = this.canvas.height * 0.2 + (i * this.canvas.height * 0.25);
+						const y2 = y1 + Math.sin(time + i) * (50 + rms * 150);
+						const strokeWidth = 1 + rms * 5;
+						
+						this.ctx.strokeStyle = rms > 0.18 ? '#ffffff' : '#000000';
+						this.ctx.lineWidth = strokeWidth;
+						this.ctx.beginPath();
+						this.ctx.moveTo(0, y1);
+						this.ctx.lineTo(this.canvas.width, y2);
+						this.ctx.stroke();
+					}
+				}
+
+				private generateRetroElements(time: number, rms: number): void {
+					// Grid lines
+					const gridSize = 50 + rms * 100;
+					this.ctx.strokeStyle = '#ff00ff';
+					this.ctx.lineWidth = 1 + rms * 2;
+					
+					for (let x = 0; x < this.canvas.width; x += gridSize) {
+						this.ctx.beginPath();
+						this.ctx.moveTo(x, 0);
+						this.ctx.lineTo(x, this.canvas.height);
+						this.ctx.stroke();
+					}
+					
+					for (let y = 0; y < this.canvas.height; y += gridSize) {
+						this.ctx.beginPath();
+						this.ctx.moveTo(0, y);
+						this.ctx.lineTo(this.canvas.width, y);
+						this.ctx.stroke();
+					}
+					
+					// Circles
+					const numCircles = Math.floor(3 + rms * 5);
+					for (let i = 0; i < numCircles; i++) {
+						const x = this.canvas.width * 0.2 + (i * this.canvas.width * 0.2);
+						const y = this.canvas.height * 0.5 + Math.sin(time + i) * 50;
+						const radius = 20 + rms * 40;
+						
+						this.ctx.fillStyle = `hsl(${i * 60}, 80%, 60%)`;
+						this.ctx.beginPath();
+						this.ctx.arc(x, y, radius, 0, Math.PI * 2);
+						this.ctx.fill();
+					}
+				}
+
+				private generateWineCountryElements(time: number, rms: number): void {
+					// Vineyard-like elements
+					const numVines = Math.floor(5 + rms * 10);
+					for (let i = 0; i < numVines; i++) {
+						const x = this.canvas.width * 0.1 + (i * this.canvas.width * 0.15);
+						const startY = this.canvas.height * 0.8;
+						const endY = this.canvas.height * 0.2;
+						
+						this.ctx.strokeStyle = '#8B4513';
+						this.ctx.lineWidth = 2 + rms * 3;
+						this.ctx.beginPath();
+						this.ctx.moveTo(x, startY);
+						
+						// Curved vine
+						for (let y = startY; y > endY; y -= 20) {
+							const curveX = x + Math.sin(time + i + y * 0.01) * (20 + rms * 50);
+							this.ctx.lineTo(curveX, y);
+						}
+						this.ctx.stroke();
+						
+						// Leaves
+						if (rms > 0.1) {
+							this.ctx.fillStyle = '#228B22';
+							this.ctx.beginPath();
+							this.ctx.ellipse(x, endY + 50, 10 + rms * 20, 5 + rms * 10, 0, 0, Math.PI * 2);
+							this.ctx.fill();
+						}
+					}
+				}
+
+				async generateVideo(audioAnalysis: any, stylePreset: string, onProgress?: (frame: number, total: number) => void, audioFile?: File): Promise<Blob> {
+					console.log('Generating video in browser...');
+					
+					const fps = 30;
+					const totalFrames = Math.floor(audioAnalysis.duration * fps);
+					const chunks: Blob[] = [];
+					
+					// Create MediaRecorder with both video and audio
+					const videoStream = this.canvas.captureStream(fps);
+					
+					// If we have an audio file, add it to the stream
+					if (audioFile && this.audioContext && this.audioContext.state === 'running') {
+						try {
+							// Create audio element and load the audio file
+							const audioElement = document.createElement('audio');
+							audioElement.src = URL.createObjectURL(audioFile);
+							audioElement.crossOrigin = 'anonymous';
+							
+							// Create audio context and connect audio element
+							const audioDestination = this.audioContext.createMediaStreamDestination();
+							const audioSource = this.audioContext.createMediaElementSource(audioElement);
+							audioSource.connect(audioDestination);
+							audioSource.connect(this.audioContext.destination); // Also connect to speakers for monitoring
+							
+							// Combine video and audio streams
+							const combinedStream = new MediaStream([
+								...videoStream.getVideoTracks(),
+								...audioDestination.stream.getAudioTracks()
+							]);
+							
+							const mediaRecorder = new MediaRecorder(combinedStream, {
+								mimeType: 'video/webm;codecs=vp9,opus'
+							});
+							
+							return new Promise((resolve, reject) => {
+								mediaRecorder.ondataavailable = (event) => {
+									if (event.data.size > 0) {
+										chunks.push(event.data);
+									}
+								};
+								
+								mediaRecorder.onstop = () => {
+									const blob = new Blob(chunks, { type: 'video/webm' });
+									resolve(blob);
+								};
+								
+								mediaRecorder.onerror = reject;
+								
+								// Start recording and playing audio
+								mediaRecorder.start();
+								audioElement.play();
+								
+								// Generate frames
+								let frameIndex = 0;
+								const frameInterval = 1000 / fps;
+								
+								const generateNextFrame = () => {
+									if (frameIndex >= totalFrames) {
+										mediaRecorder.stop();
+										audioElement.pause();
+										return;
+									}
+									
+									const time = frameIndex / fps;
+									this.generateFrame(time, audioAnalysis, stylePreset);
+									
+									if (onProgress) {
+										onProgress(frameIndex + 1, totalFrames);
+									}
+									
+									frameIndex++;
+									setTimeout(generateNextFrame, frameInterval);
+								};
+								
+								generateNextFrame();
+							});
+						} catch (error) {
+							console.warn('Failed to add audio to video, generating video-only:', error);
+							// Fall back to video-only if audio fails
+						}
+					}
+					
+					// Fallback: video-only recording
+					const mediaRecorder = new MediaRecorder(videoStream, {
+						mimeType: 'video/webm;codecs=vp9'
+					});
+					
+					return new Promise((resolve, reject) => {
+						mediaRecorder.ondataavailable = (event) => {
+							if (event.data.size > 0) {
+								chunks.push(event.data);
+							}
+						};
+						
+						mediaRecorder.onstop = () => {
+							const blob = new Blob(chunks, { type: 'video/webm' });
+							resolve(blob);
+						};
+						
+						mediaRecorder.onerror = reject;
+						
+						// Start recording
+						mediaRecorder.start();
+						
+						// Generate frames
+						let frameIndex = 0;
+						const frameInterval = 1000 / fps;
+						
+						const generateNextFrame = () => {
+							if (frameIndex >= totalFrames) {
+								mediaRecorder.stop();
+								return;
+							}
+							
+							const time = frameIndex / fps;
+							this.generateFrame(time, audioAnalysis, stylePreset);
+							
+							if (onProgress) {
+								onProgress(frameIndex + 1, totalFrames);
+							}
+							
+							frameIndex++;
+							setTimeout(generateNextFrame, frameInterval);
+						};
+						
+						generateNextFrame();
+					});
+				}
+
+				async addOverlays(videoBlob: Blob, title: string, guest: string, sponsor: string): Promise<Blob> {
+					console.log('Adding overlays in browser...');
+					
+					// For now, return the original blob
+					// In a full implementation, you would use Canvas to add text overlays
+					// This is a simplified version
+					return videoBlob;
+				}
+
+				generateTestAudio(duration: number = 10): Float32Array {
+					console.log('Generating test audio...');
+					
+					const sampleRate = 44100;
+					const numSamples = Math.floor(duration * sampleRate);
+					const audioData = new Float32Array(numSamples);
+					
+					// Generate a simple sine wave with varying frequency and amplitude
+					for (let i = 0; i < numSamples; i++) {
+						const time = i / sampleRate;
+						const frequency = 200 + 100 * Math.sin(time * 0.5); // Varying frequency
+						const amplitude = 0.3 + 0.2 * Math.sin(time * 2); // Varying amplitude
+						const wave = Math.sin(2 * Math.PI * frequency * time);
+						
+						// Add some variation for more interesting RMS patterns
+						const variation = Math.sin(time * 10) * 0.1;
+						audioData[i] = (wave + variation) * amplitude;
+					}
+					
+					return audioData;
+				}
+
+				createTestAudioAnalysis(duration: number = 10): any {
+					console.log('Creating test audio analysis...');
+					
+					const rmsValues = [];
+					const vocalEnergy = [];
+					const frequencies = [];
+					
+					// Generate 100 segments of varying RMS values
+					for (let i = 0; i < 100; i++) {
+						const time = (i / 100) * duration;
+						const baseRms = 0.1 + 0.2 * Math.sin(time * 2) + 0.1 * Math.sin(time * 5);
+						const rms = Math.max(0.05, Math.min(0.8, baseRms));
+						
+						rmsValues.push(rms);
+						vocalEnergy.push(Math.min(1, rms * 2));
+						frequencies.push(150 + 100 * Math.sin(time * 3));
+					}
+					
+					return {
+						duration: duration,
+						rms: rmsValues,
+						vocalEnergy: vocalEnergy,
+						frequencies: frequencies,
+						sampleRate: 44100
+					};
+				}
+			}
 
 			// File validation
 			fileInput.addEventListener('change', (e) => {
@@ -176,10 +634,10 @@
 			form.addEventListener('submit', async (e) => {
 				console.log('Form submitted!');
 				e.preventDefault();
-				
+
 				const formData = new FormData(form);
 				const file = fileInput.files?.[0];
-				
+
 				if (!file) {
 					console.log('No file selected');
 					alert('Please select an audio file');
@@ -195,53 +653,59 @@
 				status.style.display = 'block';
 				results.style.display = 'none';
 				progressBar.style.width = '0%';
-				statusText.textContent = 'Uploading audio file...';
+				statusText.textContent = 'Processing audio in browser...';
 				statusText.style.color = '#10b981';
 				frameCountIndicator.textContent = '';
-				
+
 				try {
-					console.log('Uploading to backend...');
-					const response = await fetch('/api/upload', {
-						method: 'POST',
-						body: formData
+					// Create browser video generator
+					const videoGenerator = new BrowserVideoGenerator();
+					
+					// Analyze audio
+					statusText.textContent = 'Analyzing audio...';
+					const audioAnalysis = await videoGenerator.analyzeAudio(file);
+					console.log('Audio analysis complete:', audioAnalysis);
+					
+					// Get form data
+					const title = (document.getElementById('title') as HTMLInputElement).value || 'Untitled';
+					const guest = (document.getElementById('guest') as HTMLInputElement).value || '';
+					const sponsor = (document.getElementById('sponsor') as HTMLInputElement).value || '';
+					const stylePreset = (document.getElementById('stylePreset') as HTMLSelectElement).value;
+					
+					// Generate video
+					statusText.textContent = 'Generating video frames...';
+					stageIndicator.textContent = 'Stage 1: Frame Generation';
+					
+					const videoBlob = await videoGenerator.generateVideo(audioAnalysis, stylePreset, (frame, total) => {
+						const percentage = (frame / total) * 100;
+						progressBar.style.width = `${percentage}%`;
+						const progressText = progressBar.querySelector('div');
+						if (progressText) progressText.textContent = `${Math.round(percentage)}%`;
+						frameCountIndicator.textContent = `Frames: ${frame} / ${total}`;
+					}, file);
+					
+					// Add overlays
+					statusText.textContent = 'Adding overlays...';
+					stageIndicator.textContent = 'Stage 2: Adding Overlays';
+					const finalVideoBlob = await videoGenerator.addOverlays(videoBlob, title, guest, sponsor);
+					
+					// Create download link
+					currentVideoUrl = URL.createObjectURL(finalVideoBlob);
+					currentVideoPath = 'browser-generated-video.webm';
+					
+					// Show results
+					statusText.textContent = 'Video generation complete!';
+					stageIndicator.textContent = 'Complete!';
+					statusText.style.color = '#10b981';
+					progressBar.style.width = '100%';
+					const progressText = progressBar.querySelector('div');
+					if (progressText) progressText.textContent = '100%';
+					
+					showResults({
+						duration: audioAnalysis.duration,
+						videoPath: currentVideoPath
 					});
-					console.log('Upload response received');
 					
-					if (!response.ok) {
-						console.log('Upload failed:', response.status, response.statusText);
-						throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
-					}
-					
-					const result = await response.json();
-					console.log('Upload result:', result);
-
-					if (!result.success) {
-						console.log('Upload not successful:', result.error);
-						throw new Error(result.error || 'Upload failed');
-					}
-
-					currentJobId = result.jobId;
-					currentVideoPath = '';
-					currentVideoUrl = '';
-
-					statusText.textContent = 'Audio uploaded successfully! Starting video generation...';
-					frameCountIndicator.textContent = 'Job ID: ' + currentJobId;
-
-					console.log('About to call pollFrameProgress', currentJobId);
-
-					await pollFrameProgress(currentJobId);
-
-					// Poll for job result
-					const jobResult = await pollJobResult(currentJobId);
-					if (jobResult.success) {
-						currentVideoPath = jobResult.videoPath;
-						currentVideoUrl = `/api/download?file=${encodeURIComponent(jobResult.videoPath.split('/').pop() || 'video.mp4')}`;
-						showResults(jobResult);
-					} else {
-						statusText.textContent = `Error: ${jobResult.error || 'Video generation failed'}`;
-						statusText.style.color = '#ef4444';
-						frameCountIndicator.textContent = 'Please try again or contact support';
-					}
 				} catch (error) {
 					console.log('Error in form submit handler:', error);
 					statusText.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
@@ -252,25 +716,49 @@
 
 			function showResults(result: any) {
 				const title = (document.getElementById('title') as HTMLInputElement).value || 'Untitled Episode';
-				const duration = Math.floor(result.duration || (Math.random() * 60) + 30); // fallback for demo
+				const duration = Math.floor(result.duration || (Math.random() * 60) + 30);
 				
 				videoInfo.innerHTML = `
 					<h4>${title}</h4>
 					<p>Duration: ${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}</p>
 					<p>Resolution: 1920x1080 (1080p)</p>
-					<p>Format: MP4</p>
+					<p>Format: WebM (Browser Generated)</p>
 				`;
+				
+				// Set video source
+				if (currentVideoUrl) {
+					// Show loading indicator
+					videoLoadingIndicator.style.display = 'block';
+					videoPlayer.style.display = 'none';
+					
+					videoPlayer.src = currentVideoUrl;
+					videoPlayer.load(); // Load the video
+					
+					// Add event listener for when video is loaded
+					videoPlayer.addEventListener('loadedmetadata', () => {
+						console.log('Video loaded successfully');
+						// Hide loading indicator and show video
+						videoLoadingIndicator.style.display = 'none';
+						videoPlayer.style.display = 'block';
+					});
+					
+					videoPlayer.addEventListener('error', (e) => {
+						console.error('Error loading video:', e);
+						// Hide loading indicator on error
+						videoLoadingIndicator.style.display = 'none';
+						videoPlayer.style.display = 'block';
+					});
+				}
 				
 				results.style.display = 'block';
 			}
 
 			// Download button
 			downloadBtn.addEventListener('click', () => {
-				if (currentVideoPath) {
-					const fileName = currentVideoPath.split('/').pop() || 'video.mp4';
+				if (currentVideoUrl) {
 					const a = document.createElement('a');
-					a.href = `/api/download?file=${encodeURIComponent(fileName)}`;
-					a.download = fileName;
+					a.href = currentVideoUrl;
+					a.download = 'video-wallpaper.webm';
 					document.body.appendChild(a);
 					a.click();
 					document.body.removeChild(a);
@@ -281,141 +769,125 @@
 
 			// YouTube upload button
 			youtubeBtn.addEventListener('click', async () => {
-				try {
-					const response = await fetch('/api/youtube-upload', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							videoPath: currentVideoPath,
-							title: (document.getElementById('title') as HTMLInputElement).value || 'Untitled Video',
-							description: 'Generated with Video Wallpaper Generator',
-							tags: ['podcast', 'audio', 'video wallpaper'],
-							privacyStatus: 'private'
-						})
-					});
-
-					const result = await response.json();
-					
-					if (result.success) {
-						alert(`Video uploaded to YouTube! ID: ${result.videoId}`);
-					} else if (result.authUrl) {
-						alert('YouTube authentication required. Please set up your credentials.');
-					} else {
-						alert(`Upload failed: ${result.error}`);
-					}
-				} catch (error) {
-					alert(`Upload error: ${error}`);
-				}
+				alert('YouTube upload requires server-side processing. Please use the server version for YouTube integration.');
 			});
 
-			async function pollFrameProgress(jobId: string) {
-				console.log('Calling pollFrameProgress', jobId);
-				statusText.textContent = 'Starting video generation...';
-				stageIndicator.textContent = 'Stage 1: Audio Analysis & Frame Generation';
+			// Test video button
+			testVideoBtn.addEventListener('click', async () => {
+				console.log('Test video button clicked');
+				
+				// Disable button during generation
+				testVideoBtn.disabled = true;
+				testVideoBtn.textContent = '🎬 Generating...';
+				
+				// Show status
+				status.style.display = 'block';
+				results.style.display = 'none';
 				progressBar.style.width = '0%';
-				const progressText = progressBar.querySelector('div');
-				if (progressText) progressText.textContent = '0%';
+				statusText.textContent = 'Generating test video...';
+				statusText.style.color = '#10b981';
 				frameCountIndicator.textContent = '';
-				
-				let attempts = 0;
-				const maxAttempts = 300; // 5 minutes max
-				
-				while (attempts < maxAttempts) {
-					await new Promise(resolve => setTimeout(resolve, 1000));
-					attempts++;
-					
-					try {
-						console.log('Polling /api/progress for jobId:', jobId);
-						const res = await fetch(`/api/progress?jobId=${encodeURIComponent(jobId)}`);
-						console.log('Progress API response:', res);
-						
-						if (res.ok) {
-							const progress = await res.json();
-							console.log('[PROGRESS POLL]', progress);
-							
-							if (progress.currentFrame !== undefined && progress.totalFrames !== undefined) {
-								const percentage = (progress.currentFrame / progress.totalFrames) * 100;
-								progressBar.style.width = `${percentage}%`;
-								if (progressText) progressText.textContent = `${Math.round(percentage)}%`;
-								console.log('[PROGRESS BAR UPDATE]', percentage, progressBar.style.width);
-								progressBar.style.display = 'block'; // Ensure visible
-								progressBar.offsetWidth; // Force reflow
-								
-								// Update status based on progress
-								if (progress.currentFrame === 0) {
-									statusText.textContent = 'Analyzing audio and preparing frames...';
-									stageIndicator.textContent = 'Stage 1: Audio Analysis & Frame Generation';
-								} else if (progress.currentFrame < progress.totalFrames) {
-									statusText.textContent = `Generating video frames... (${Math.round(percentage)}%)`;
-									stageIndicator.textContent = 'Stage 1: Audio Analysis & Frame Generation';
-									frameCountIndicator.textContent = `Frames: ${progress.currentFrame} / ${progress.totalFrames}`;
-								} else {
-									statusText.textContent = 'Frames complete! Adding overlays...';
-									stageIndicator.textContent = 'Stage 2: Adding Overlays & Finalizing';
-									progressBar.style.width = '100%';
-									if (progressText) progressText.textContent = '100%';
-									frameCountIndicator.textContent = `All ${progress.totalFrames} frames generated`;
-									break;
-								}
-							} else {
-								statusText.textContent = 'Processing started...';
-								stageIndicator.textContent = 'Stage 1: Audio Analysis & Frame Generation';
-								frameCountIndicator.textContent = 'Waiting for frame generation to begin...';
-							}
-						} else {
-							console.log('Progress API not ok:', res.status, res.statusText);
-							frameCountIndicator.textContent = 'Waiting for progress...';
-						}
-					} catch (error) {
-						console.log('Error in pollFrameProgress:', error);
-						frameCountIndicator.textContent = 'Error polling progress';
-						break;
-					}
-				}
-				
-				if (attempts >= maxAttempts) {
-					throw new Error('Processing timeout - job took too long');
-				}
-			}
 
-			async function pollJobResult(jobId: string) {
-				statusText.textContent = 'Finalizing video...';
-				stageIndicator.textContent = 'Stage 2: Adding Overlays & Finalizing';
-				frameCountIndicator.textContent = 'Adding overlays and generating thumbnail...';
-				
-				let attempts = 0;
-				const maxAttempts = 60; // 1 minute max
-				
-				while (attempts < maxAttempts) {
-					await new Promise(resolve => setTimeout(resolve, 2000));
-					attempts++;
+				try {
+					// Create browser video generator
+					const videoGenerator = new BrowserVideoGenerator();
 					
-					try {
-						const res = await fetch(`/api/job-result?jobId=${encodeURIComponent(jobId)}`);
+					// Create test audio analysis
+					statusText.textContent = 'Creating test audio...';
+					const audioAnalysis = videoGenerator.createTestAudioAnalysis(10); // 10 seconds
+					console.log('Test audio analysis complete:', audioAnalysis);
+					
+					// Create synthetic audio file for test video
+					const testAudioData = videoGenerator.generateTestAudio(10);
+					const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+					const audioBuffer = audioContext.createBuffer(1, testAudioData.length, audioContext.sampleRate);
+					audioBuffer.getChannelData(0).set(testAudioData);
+					
+					// Convert AudioBuffer to Blob
+					const audioBlob = await new Promise<Blob>((resolve) => {
+						const mediaStreamDestination = audioContext.createMediaStreamDestination();
+						const source = audioContext.createBufferSource();
+						source.buffer = audioBuffer;
+						source.connect(mediaStreamDestination);
 						
-						if (res.status === 200) {
-							const result = await res.json();
-							statusText.textContent = 'Video generation complete!';
-							stageIndicator.textContent = 'Complete!';
-							statusText.style.color = '#10b981';
-							return result;
-						} else if (res.status === 404) {
-							statusText.textContent = 'Processing video...';
-							stageIndicator.textContent = 'Stage 2: Adding Overlays & Finalizing';
-							frameCountIndicator.textContent = `Finalizing... (attempt ${attempts}/${maxAttempts})`;
-						} else {
-							throw new Error(`Job result check failed: ${res.status}`);
-						}
-					} catch (error) {
-						console.error('Job result polling error:', error);
-						statusText.textContent = 'Processing in progress...';
-						stageIndicator.textContent = 'Stage 2: Adding Overlays & Finalizing';
-						frameCountIndicator.textContent = 'Checking completion...';
-					}
+						const mediaRecorder = new MediaRecorder(mediaStreamDestination.stream);
+						const chunks: Blob[] = [];
+						
+						mediaRecorder.ondataavailable = (event) => {
+							if (event.data.size > 0) {
+								chunks.push(event.data);
+							}
+						};
+						
+						mediaRecorder.onstop = () => {
+							const blob = new Blob(chunks, { type: 'audio/webm' });
+							resolve(blob);
+						};
+						
+						mediaRecorder.start();
+						source.start();
+						
+						setTimeout(() => {
+							mediaRecorder.stop();
+						}, 10500); // Slightly longer than 10 seconds to ensure complete capture
+					});
+					
+					// Create a File object from the blob
+					const testAudioFile = new File([audioBlob], 'test-audio.webm', { type: 'audio/webm' });
+					
+					// Pre-configured settings
+					const title = 'Test Video - Browser Generated';
+					const guest = 'Demo Guest';
+					const sponsor = 'Demo Sponsor';
+					const stylePreset = 'French New Wave'; // Default to French New Wave for testing
+					
+					// Generate video
+					statusText.textContent = 'Generating test video frames...';
+					stageIndicator.textContent = 'Stage 1: Frame Generation';
+					
+					const videoBlob = await videoGenerator.generateVideo(audioAnalysis, stylePreset, (frame, total) => {
+						const percentage = (frame / total) * 100;
+						progressBar.style.width = `${percentage}%`;
+						const progressText = progressBar.querySelector('div');
+						if (progressText) progressText.textContent = `${Math.round(percentage)}%`;
+						frameCountIndicator.textContent = `Frames: ${frame} / ${total}`;
+					}, testAudioFile);
+					
+					// Add overlays
+					statusText.textContent = 'Adding test overlays...';
+					stageIndicator.textContent = 'Stage 2: Adding Overlays';
+					const finalVideoBlob = await videoGenerator.addOverlays(videoBlob, title, guest, sponsor);
+					
+					// Create download link
+					currentVideoUrl = URL.createObjectURL(finalVideoBlob);
+					currentVideoPath = 'test-video-browser-generated.webm';
+					
+					// Show results
+					statusText.textContent = 'Test video generation complete!';
+					stageIndicator.textContent = 'Complete!';
+					statusText.style.color = '#10b981';
+					progressBar.style.width = '100%';
+					const progressText = progressBar.querySelector('div');
+					if (progressText) progressText.textContent = '100%';
+					
+					showResults({
+						duration: audioAnalysis.duration,
+						videoPath: currentVideoPath
+					});
+					
+					console.log('✅ Test video generated successfully');
+					
+				} catch (error) {
+					console.log('Error generating test video:', error);
+					statusText.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
+					statusText.style.color = '#ef4444';
+					frameCountIndicator.textContent = 'Test video generation failed';
+				} finally {
+					// Re-enable button
+					testVideoBtn.disabled = false;
+					testVideoBtn.textContent = '🎬 Generate Test Video';
 				}
-				
-				throw new Error('Job completion timeout');
-			}
+			});
 		</script>
 	</body>
 </html>
