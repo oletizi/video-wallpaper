@@ -238,37 +238,51 @@
 					this.audioData = channelData;
 					this.sampleRate = audioBuffer.sampleRate;
 					
-					// Calculate RMS values (simplified analysis)
+					// Calculate RMS values with more granular segments
+					const fps = 30;
+					const totalFrames = Math.floor(audioBuffer.duration * fps);
 					const rmsValues = [];
-					const segmentSize = Math.floor(channelData.length / 100);
+					const vocalEnergy = [];
+					const frequencies = [];
 					
-					for (let i = 0; i < 100; i++) {
-						const start = i * segmentSize;
-						const end = Math.min(start + segmentSize, channelData.length);
-						let sum = 0;
+					// Create one RMS value per frame for better synchronization
+					for (let frame = 0; frame < totalFrames; frame++) {
+						const startTime = frame / fps;
+						const endTime = (frame + 1) / fps;
 						
-						for (let j = start; j < end; j++) {
-							sum += channelData[j] * channelData[j];
+						const startSample = Math.floor(startTime * this.sampleRate);
+						const endSample = Math.floor(endTime * this.sampleRate);
+						
+						let sum = 0;
+						let count = 0;
+						
+						for (let i = startSample; i < endSample && i < channelData.length; i++) {
+							sum += channelData[i] * channelData[i];
+							count++;
 						}
 						
-						const rms = Math.sqrt(sum / (end - start));
+						const rms = count > 0 ? Math.sqrt(sum / count) : 0.1;
 						rmsValues.push(rms);
+						vocalEnergy.push(Math.min(1, rms * 2));
+						frequencies.push(150 + 100 * Math.sin(startTime * 2)); // Varying frequency
 					}
 					
 					return {
 						duration: audioBuffer.duration,
 						rms: rmsValues,
-						vocalEnergy: rmsValues.map(r => Math.min(1, r * 2)), // Simplified
-						frequencies: rmsValues.map(() => 150), // Simplified
-						sampleRate: this.sampleRate
+						vocalEnergy: vocalEnergy,
+						frequencies: frequencies,
+						sampleRate: this.sampleRate,
+						totalFrames: totalFrames
 					};
 				}
 
 				generateFrame(time: number, audioAnalysis: any, stylePreset: string): void {
 					const fps = 30;
 					const frameIndex = Math.floor(time * fps);
-					const audioFrameIndex = Math.floor(time * audioAnalysis.sampleRate / 1024);
-					const rms = audioAnalysis.rms[audioFrameIndex] || 0.1;
+					
+					// Use frame-based audio analysis for better synchronization
+					const rms = audioAnalysis.rms[frameIndex] || 0.1;
 					
 					// Clear canvas
 					this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
