@@ -43,7 +43,7 @@
 				>
 					🎬 Generate Test Video
 				</button>
-				<span style="color: #aaa; font-size: 0.9em;">Creates a 10-second sample with default settings</span>
+				<span style="color: #aaa; font-size: 0.9em;">Creates a 5-second sample with default settings</span>
 			</div>
 
 			<form id="uploadForm" style="display: flex; flex-direction: column; gap: 1.5em;">
@@ -195,6 +195,13 @@
 			let currentVideoPath: string = '';
 			let currentVideoUrl: string = '';
 			let currentJobId: string = '';
+			let cachedTestAudioFile: File | null = null;
+
+			// Function to clear the test audio cache (useful when switching audio files)
+			function clearTestAudioCache() {
+				cachedTestAudioFile = null;
+				console.log('Test audio cache cleared');
+			}
 
 			// Browser-based video generation
 			class BrowserVideoGenerator {
@@ -789,51 +796,20 @@
 				frameCountIndicator.textContent = '';
 
 				try {
+					// Clear cache to ensure we use the latest audio file
+					clearTestAudioCache();
+					
 					// Create browser video generator
 					const videoGenerator = new BrowserVideoGenerator();
 					
-					// Create test audio analysis
-					statusText.textContent = 'Creating test audio...';
-					const audioAnalysis = videoGenerator.createTestAudioAnalysis(10); // 10 seconds
+					// Get or create the pre-built test audio file
+					statusText.textContent = cachedTestAudioFile ? 'Using cached test audio...' : 'Loading test audio file...';
+					const testAudioFile = await getTestAudioFile();
+					
+					// Analyze the test audio file to create audio context and get proper analysis
+					statusText.textContent = 'Analyzing test audio...';
+					const audioAnalysis = await videoGenerator.analyzeAudio(testAudioFile);
 					console.log('Test audio analysis complete:', audioAnalysis);
-					
-					// Create synthetic audio file for test video
-					const testAudioData = videoGenerator.generateTestAudio(10);
-					const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-					const audioBuffer = audioContext.createBuffer(1, testAudioData.length, audioContext.sampleRate);
-					audioBuffer.getChannelData(0).set(testAudioData);
-					
-					// Convert AudioBuffer to Blob
-					const audioBlob = await new Promise<Blob>((resolve) => {
-						const mediaStreamDestination = audioContext.createMediaStreamDestination();
-						const source = audioContext.createBufferSource();
-						source.buffer = audioBuffer;
-						source.connect(mediaStreamDestination);
-						
-						const mediaRecorder = new MediaRecorder(mediaStreamDestination.stream);
-						const chunks: Blob[] = [];
-						
-						mediaRecorder.ondataavailable = (event) => {
-							if (event.data.size > 0) {
-								chunks.push(event.data);
-							}
-						};
-						
-						mediaRecorder.onstop = () => {
-							const blob = new Blob(chunks, { type: 'audio/webm' });
-							resolve(blob);
-						};
-						
-						mediaRecorder.start();
-						source.start();
-						
-						setTimeout(() => {
-							mediaRecorder.stop();
-						}, 10500); // Slightly longer than 10 seconds to ensure complete capture
-					});
-					
-					// Create a File object from the blob
-					const testAudioFile = new File([audioBlob], 'test-audio.webm', { type: 'audio/webm' });
 					
 					// Pre-configured settings
 					const title = 'Test Video - Browser Generated';
@@ -888,6 +864,32 @@
 					testVideoBtn.textContent = '🎬 Generate Test Video';
 				}
 			});
+
+			// Utility function to get the pre-built test audio file
+			async function getTestAudioFile(): Promise<File> {
+				if (cachedTestAudioFile) {
+					return cachedTestAudioFile;
+				}
+
+				console.log('Loading pre-built test audio file...');
+				
+				try {
+					// Fetch the test audio file from the public directory
+					const response = await fetch('/test-audio-5sec.mp3');
+					if (!response.ok) {
+						throw new Error(`Failed to load test audio file: ${response.status}`);
+					}
+					
+					const audioBlob = await response.blob();
+					cachedTestAudioFile = new File([audioBlob], 'test-audio-5sec.mp3', { type: 'audio/mp3' });
+					console.log('Test audio file loaded and cached');
+					
+					return cachedTestAudioFile;
+				} catch (error) {
+					console.error('Error loading test audio file:', error);
+					throw new Error('Failed to load test audio file. Please try again.');
+				}
+			}
 		</script>
 	</body>
 </html>
