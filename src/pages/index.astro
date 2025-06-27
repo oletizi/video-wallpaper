@@ -275,7 +275,7 @@
 				private motionMemory: Map<number, { positions: number[], velocities: number[], lastTime: number }> = new Map();
 				private globalTime: number = 0;
 
-				constructor(previewCanvas?: HTMLCanvasElement, style: string = 'french-new-wave') {
+				constructor(previewCanvas?: HTMLCanvasElement, style: string = 'french-new-wave', seed?: number, generationId?: number) {
 					this.canvas = document.createElement('canvas');
 					this.canvas.width = 1920;
 					this.canvas.height = 1080;
@@ -284,8 +284,8 @@
 					if (previewCanvas) {
 						this.previewCtx = previewCanvas.getContext('2d')!;
 					}
-					this.seed = Math.random() * 1000000;
-					this.generationId = Math.floor(Math.random() * 1000000);
+					this.seed = seed || Math.random() * 1000000;
+					this.generationId = generationId || Math.floor(Math.random() * 1000000);
 					this.style = style;
 				}
 
@@ -900,18 +900,25 @@
 						const size = this.getEvolvingParam(baseSize, time, 0.8, baseSize * 0.5);
 						const shapeThreshold = this.getEvolvingParam(0.2, time, 0.4, 0.08);
 						
-						// Morph between black/white and grayscale
-						const isBlackWhite = Math.sin(time * 0.3 + i) > 0;
-						if (isBlackWhite) {
-							this.ctx.fillStyle = rms > shapeThreshold ? '#ffffff' : '#000000';
-							this.ctx.strokeStyle = rms > shapeThreshold ? '#000000' : '#ffffff';
+						// Authentic 1960s film look - only black, white, and grays
+						const filmGrain = this.getFilmGrain(x, y, time, seed + i);
+						const filmContrast = this.getFilmContrast(time, seed + i);
+						
+						if (rms > shapeThreshold) {
+							// High contrast white with film grain
+							const whiteValue = Math.max(220, 255 - filmGrain * 30); // Increased minimum brightness
+							this.ctx.fillStyle = `rgb(${whiteValue}, ${whiteValue}, ${whiteValue})`;
+							this.ctx.strokeStyle = '#000000';
 						} else {
-							const gray = this.getEvolvingParam(128, time, 0.5, 100);
-							this.ctx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
-							this.ctx.strokeStyle = `rgb(${255-gray}, ${255-gray}, ${255-gray})`;
+							// Brighter gray to black with film grain
+							const grayValue = Math.max(20, Math.min(120, 60 - filmGrain * 20)); // Increased brightness range
+							this.ctx.fillStyle = `rgb(${grayValue}, ${grayValue}, ${grayValue})`;
+							this.ctx.strokeStyle = `rgb(${Math.max(0, grayValue - 20)}, ${Math.max(0, grayValue - 20)}, ${Math.max(0, grayValue - 20)})`;
 						}
 						
-						this.ctx.lineWidth = this.getEvolvingParam(1, time, 1.0, 1.0) + (rms * 2);
+						// Film-like line width with variation
+						const lineWidth = this.getEvolvingParam(1, time, 1.0, 1.0) + (rms * 2) + filmGrain * 2;
+						this.ctx.lineWidth = Math.max(0.5, lineWidth);
 						
 						// Dramatic evolving shape types over time
 						const shapeType = this.randomInt(seed + i * 600 + Math.floor(time * 3), 0, 4);
@@ -1019,21 +1026,138 @@
 						const strokeWidth = this.getEvolvingParam(1, time, 1.0, 1.0) + (rms * 5);
 						const lineThreshold = this.getEvolvingParam(0.18, time, 0.4, 0.06);
 						
-						// Morph between black/white and grayscale
-						const isBlackWhite = Math.sin(time * 0.4 + i) > 0;
-						if (isBlackWhite) {
-							this.ctx.strokeStyle = rms > lineThreshold ? '#ffffff' : '#000000';
+						// Film grain for lines
+						const lineGrain = this.getFilmGrain(0, baseY, time, seed + i + 1000);
+						
+						// Authentic film look for lines
+						if (rms > lineThreshold) {
+							const whiteValue = Math.max(200, 255 - lineGrain * 30); // Increased minimum brightness
+							this.ctx.strokeStyle = `rgb(${whiteValue}, ${whiteValue}, ${whiteValue})`;
 						} else {
-							const gray = this.getEvolvingParam(128, time, 0.6, 120);
-							this.ctx.strokeStyle = `rgb(${gray}, ${gray}, ${gray})`;
+							const grayValue = Math.max(10, Math.min(100, 50 - lineGrain * 15)); // Increased brightness range
+							this.ctx.strokeStyle = `rgb(${grayValue}, ${grayValue}, ${grayValue})`;
 						}
 						
-						this.ctx.lineWidth = strokeWidth;
+						this.ctx.lineWidth = strokeWidth + lineGrain * 1.5;
 						this.ctx.beginPath();
 						this.ctx.moveTo(0, y1);
 						this.ctx.lineTo(this.canvas.width, y2);
 						this.ctx.stroke();
 					}
+					
+					// Add film grain overlay
+					this.addFilmGrainOverlay(time, seed);
+					
+					// Add vignette effect
+					this.addVignetteEffect();
+					
+					// Add film damage effects
+					this.addFilmDamageEffects(time, seed);
+				}
+
+				// Generate authentic film grain
+				private getFilmGrain(x: number, y: number, time: number, seed: number): number {
+					// Simplified grain calculation for better performance and sync
+					const grainX = Math.floor(x / 12); // Larger sampling for performance
+					const grainY = Math.floor(y / 12);
+					const grainTime = Math.floor(time * 3); // Reduced time sampling
+					
+					// Simplified pseudo-random calculation
+					const grainSeed = (grainX * 73856093) ^ (grainY * 19349663) ^ (grainTime * 83492791) ^ seed;
+					const grain = (grainSeed * 9301 + 49297) % 233280;
+					
+					return (grain / 233280) * 0.15; // Further reduced grain intensity
+				}
+
+				// Get film contrast variation
+				private getFilmContrast(time: number, seed: number): number {
+					const contrastSeed = (Math.floor(time * 5) * 73856093) ^ seed;
+					const contrast = (contrastSeed * 9301 + 49297) % 233280;
+					return (contrast / 233280) * 0.4 + 0.8; // Contrast between 0.8 and 1.2
+				}
+
+				// Add film grain overlay to the entire canvas
+				private addFilmGrainOverlay(time: number, seed: number): void {
+					// Only add grain overlay every 5 frames to maintain performance and sync
+					if (Math.floor(time * 30) % 5 !== 0) return;
+					
+					const grainIntensity = 0.08; // Further reduced intensity
+					const grainSize = 6; // Larger grain size for better performance
+					
+					// Sample even fewer pixels for better performance
+					for (let x = 0; x < this.canvas.width; x += grainSize * 3) {
+						for (let y = 0; y < this.canvas.height; y += grainSize * 3) {
+							const grain = this.getFilmGrain(x, y, time, seed + x + y);
+							
+							if (grain > 0.85) {
+								// Add white grain
+								this.ctx.fillStyle = `rgba(255, 255, 255, ${grain * grainIntensity})`;
+								this.ctx.fillRect(x, y, grainSize, grainSize);
+							} else if (grain < 0.15) {
+								// Add black grain
+								this.ctx.fillStyle = `rgba(0, 0, 0, ${(0.15 - grain) * grainIntensity})`;
+								this.ctx.fillRect(x, y, grainSize, grainSize);
+							}
+						}
+					}
+				}
+
+				// Add vignette effect for authentic film look
+				private addVignetteEffect(): void {
+					const centerX = this.canvas.width / 2;
+					const centerY = this.canvas.height / 2;
+					const maxDistance = Math.sqrt(centerX * centerX + centerY * centerY);
+					
+					// Create radial gradient for vignette
+					const gradient = this.ctx.createRadialGradient(
+						centerX, centerY, 0,
+						centerX, centerY, maxDistance * 0.8
+					);
+					
+					gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+					gradient.addColorStop(0.8, 'rgba(0, 0, 0, 0)');
+					gradient.addColorStop(1, 'rgba(0, 0, 0, 0.2)'); // Reduced from 0.4 to 0.2
+					
+					this.ctx.fillStyle = gradient;
+					this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+				}
+
+				// Add film damage effects like scratches and dust
+				private addFilmDamageEffects(time: number, seed: number): void {
+					// Only add damage effects every 8 frames to maintain performance and sync
+					if (Math.floor(time * 30) % 8 !== 0) return;
+					
+					// Add horizontal scratches (reduced frequency)
+					const numScratches = this.randomInt(seed + 2000, 0, 1); // Further reduced to 0-1
+					for (let i = 0; i < numScratches; i++) {
+						const scratchY = this.randomRange(seed + i * 300, 0, this.canvas.height);
+						const scratchWidth = this.randomRange(seed + i * 400, 1, 2);
+						const scratchOpacity = this.randomRange(seed + i * 500, 0.03, 0.1); // Further reduced opacity
+						
+						this.ctx.fillStyle = `rgba(255, 255, 255, ${scratchOpacity})`;
+						this.ctx.fillRect(0, scratchY, this.canvas.width, scratchWidth);
+					}
+					
+					// Add dust particles (reduced count)
+					const numDust = this.randomInt(seed + 3000, 1, 3); // Further reduced to 1-3
+					for (let i = 0; i < numDust; i++) {
+						const dustX = this.randomRange(seed + i * 400, 0, this.canvas.width);
+						const dustY = this.randomRange(seed + i * 500, 0, this.canvas.height);
+						const dustSize = this.randomRange(seed + i * 600, 1, 2);
+						const dustOpacity = this.randomRange(seed + i * 700, 0.05, 0.2); // Further reduced opacity
+						
+						this.ctx.fillStyle = `rgba(255, 255, 255, ${dustOpacity})`;
+						this.ctx.beginPath();
+						this.ctx.arc(dustX, dustY, dustSize, 0, Math.PI * 2);
+						this.ctx.fill();
+					}
+					
+					// Add film flicker (simplified and less frequent)
+					const flicker = Math.sin(time * 10 + seed) * 0.03 + 0.97; // Reduced frequency and intensity
+					this.ctx.globalAlpha = flicker;
+					this.ctx.fillStyle = 'rgba(0, 0, 0, 0.01)'; // Further reduced opacity
+					this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+					this.ctx.globalAlpha = 1.0;
 				}
 
 				private generateRetroElements(time: number, rms: number, seed: number): void {
@@ -1532,30 +1656,30 @@
 				}
 			});
 
-			// Form submission
-			form.addEventListener('submit', async (e) => {
-				console.log('Form submitted!');
-				e.preventDefault();
+			// Generate consistent parameters for video generation
+			function generateVideoParams() {
+				const seed = Math.random() * 1000000;
+				const generationId = Math.floor(Math.random() * 1000000);
+				return { seed, generationId };
+			}
 
-				const formData = new FormData(form);
+			// Form submit handler
+			form.addEventListener('submit', async (event) => {
+				event.preventDefault();
+				
+				const fileInput = document.getElementById('audioFile') as HTMLInputElement;
 				const file = fileInput.files?.[0];
-
+				
 				if (!file) {
-					console.log('No file selected');
-					alert('Please select an audio file');
+					alert('Please select an audio file.');
 					return;
 				}
-
-				if (file.size > 250 * 1024 * 1024) {
-					console.log('File too large');
-					alert('File size exceeds 250MB limit');
-					return;
-				}
-
+				
+				// Show status
 				status.style.display = 'block';
 				results.style.display = 'none';
 				progressBar.style.width = '0%';
-				statusText.textContent = 'Processing audio in browser...';
+				statusText.textContent = 'Starting video generation...';
 				statusText.style.color = '#10b981';
 				frameCountIndicator.textContent = '';
 
@@ -1563,19 +1687,32 @@
 				initializeLivePreview();
 
 				try {
-					// Create browser video generator
-					const videoGenerator = new BrowserVideoGenerator(livePreviewCanvas);
-					
-					// Analyze audio
-					statusText.textContent = 'Analyzing audio...';
-					const audioAnalysis = await videoGenerator.analyzeAudio(file);
-					console.log('Audio analysis complete:', audioAnalysis);
-					
 					// Get form data
 					const title = (document.getElementById('title') as HTMLInputElement).value || 'Untitled';
 					const guest = (document.getElementById('guest') as HTMLInputElement).value || '';
 					const sponsor = (document.getElementById('sponsor') as HTMLInputElement).value || '';
 					const stylePreset = (document.getElementById('stylePreset') as HTMLSelectElement).value;
+					
+					// Generate consistent parameters
+					const { seed, generationId } = generateVideoParams();
+					
+					// Convert style preset to internal style name
+					let internalStyle = 'french-new-wave';
+					if (stylePreset === 'French New Wave') {
+						internalStyle = 'french-new-wave';
+					} else if (stylePreset === "'80s Retro Chromatic") {
+						internalStyle = 'retro';
+					} else if (stylePreset === 'Wine-Country Dreamscape') {
+						internalStyle = 'wine-country';
+					}
+					
+					// Create browser video generator with consistent parameters
+					const videoGenerator = new BrowserVideoGenerator(livePreviewCanvas, internalStyle, seed, generationId);
+					
+					// Analyze audio
+					statusText.textContent = 'Analyzing audio...';
+					const audioAnalysis = await videoGenerator.analyzeAudio(file);
+					console.log('Audio analysis complete:', audioAnalysis);
 					
 					// Generate video
 					statusText.textContent = 'Generating video frames...';
@@ -1700,8 +1837,11 @@
 					// Clear cache to ensure we use the latest audio file
 					clearTestAudioCache();
 					
-					// Create browser video generator
-					const videoGenerator = new BrowserVideoGenerator(livePreviewCanvas);
+					// Generate consistent parameters
+					const { seed, generationId } = generateVideoParams();
+					
+					// Create browser video generator with consistent parameters
+					const videoGenerator = new BrowserVideoGenerator(livePreviewCanvas, 'french-new-wave', seed, generationId);
 					
 					// Get or create the pre-built test audio file
 					statusText.textContent = cachedTestAudioFile ? 'Using cached test audio...' : 'Loading test audio file...';
@@ -1788,8 +1928,11 @@
 					// Clear cache to ensure we use the latest audio file
 					clearTestAudioCache();
 					
-					// Create browser video generator
-					const videoGenerator = new BrowserVideoGenerator(livePreviewCanvas);
+					// Generate consistent parameters
+					const { seed, generationId } = generateVideoParams();
+					
+					// Create browser video generator with consistent parameters
+					const videoGenerator = new BrowserVideoGenerator(livePreviewCanvas, 'retro', seed, generationId);
 					
 					// Get or create the pre-built test audio file
 					statusText.textContent = cachedTestAudioFile ? 'Using cached test audio...' : 'Loading test audio file...';
@@ -1876,8 +2019,11 @@
 					// Clear cache to ensure we use the latest audio file
 					clearTestAudioCache();
 					
-					// Create browser video generator
-					const videoGenerator = new BrowserVideoGenerator(livePreviewCanvas);
+					// Generate consistent parameters
+					const { seed, generationId } = generateVideoParams();
+					
+					// Create browser video generator with consistent parameters
+					const videoGenerator = new BrowserVideoGenerator(livePreviewCanvas, 'wine-country', seed, generationId);
 					
 					// Get or create the pre-built test audio file
 					statusText.textContent = cachedTestAudioFile ? 'Using cached test audio...' : 'Loading test audio file...';
