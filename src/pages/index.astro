@@ -33,17 +33,31 @@
 			</div>
 
 			<div style="margin-bottom: 2em; padding: 1.5em; background: #1f1f23; border-radius: 0.5em; border: 1px solid #333;">
-				<h3 style="margin-top: 0; color: #6366f1;">Quick Test</h3>
+				<h3 style="margin-top: 0; color: #6366f1;">Quick Test Videos</h3>
 				<p style="margin-bottom: 1em; color: #aaa;">
-					Generate a sample video with pre-configured settings to test the system.
+					Generate sample videos with different style presets to test the system.
 				</p>
-				<button 
-					id="testVideoBtn"
-					style="padding: 0.75em 1.5em; font-size: 1em; background: #6366f1; color: #fff; border: none; border-radius: 0.5em; cursor: pointer; margin-right: 1em;"
-				>
-					🎬 Generate Test Video
-				</button>
-				<span style="color: #aaa; font-size: 0.9em;">Creates a 5-second sample with default settings</span>
+				<div style="display: flex; flex-wrap: wrap; gap: 1em; margin-bottom: 1em;">
+					<button 
+						id="testVideoFrenchNewWave"
+						style="padding: 0.75em 1.5em; font-size: 1em; background: #6366f1; color: #fff; border: none; border-radius: 0.5em; cursor: pointer;"
+					>
+						🎬 French New Wave
+					</button>
+					<button 
+						id="testVideoRetro"
+						style="padding: 0.75em 1.5em; font-size: 1em; background: #8b5cf6; color: #fff; border: none; border-radius: 0.5em; cursor: pointer;"
+					>
+						🎬 '80s Retro Chromatic
+					</button>
+					<button 
+						id="testVideoWineCountry"
+						style="padding: 0.75em 1.5em; font-size: 1em; background: #d97706; color: #fff; border: none; border-radius: 0.5em; cursor: pointer;"
+					>
+						🎬 Wine-Country Dreamscape
+					</button>
+				</div>
+				<span style="color: #aaa; font-size: 0.9em;">Each creates a 5-second sample with the selected style preset</span>
 			</div>
 
 			<form id="uploadForm" style="display: flex; flex-direction: column; gap: 1.5em;">
@@ -188,7 +202,9 @@
 			const downloadBtn = document.getElementById('downloadBtn') as HTMLButtonElement;
 			const youtubeBtn = document.getElementById('youtubeBtn') as HTMLButtonElement;
 			const frameCountIndicator = document.getElementById('frameCountIndicator') as HTMLDivElement;
-			const testVideoBtn = document.getElementById('testVideoBtn') as HTMLButtonElement;
+			const testVideoFrenchNewWave = document.getElementById('testVideoFrenchNewWave') as HTMLButtonElement;
+			const testVideoRetro = document.getElementById('testVideoRetro') as HTMLButtonElement;
+			const testVideoWineCountry = document.getElementById('testVideoWineCountry') as HTMLButtonElement;
 			const videoPlayer = document.getElementById('videoPlayer') as HTMLVideoElement;
 			const videoLoadingIndicator = document.getElementById('videoLoadingIndicator') as HTMLDivElement;
 
@@ -793,13 +809,13 @@
 				alert('YouTube upload requires server-side processing. Please use the server version for YouTube integration.');
 			});
 
-			// Test video button
-			testVideoBtn.addEventListener('click', async () => {
+			// Test video buttons
+			testVideoFrenchNewWave.addEventListener('click', async () => {
 				console.log('Test video button clicked');
 				
 				// Disable button during generation
-				testVideoBtn.disabled = true;
-				testVideoBtn.textContent = '🎬 Generating...';
+				testVideoFrenchNewWave.disabled = true;
+				testVideoFrenchNewWave.textContent = '🎬 Generating...';
 				
 				// Show status
 				status.style.display = 'block';
@@ -874,8 +890,178 @@
 					frameCountIndicator.textContent = 'Test video generation failed';
 				} finally {
 					// Re-enable button
-					testVideoBtn.disabled = false;
-					testVideoBtn.textContent = '🎬 Generate Test Video';
+					testVideoFrenchNewWave.disabled = false;
+					testVideoFrenchNewWave.textContent = '🎬 French New Wave';
+				}
+			});
+
+			testVideoRetro.addEventListener('click', async () => {
+				console.log('Test video button clicked');
+				
+				// Disable button during generation
+				testVideoRetro.disabled = true;
+				testVideoRetro.textContent = '🎬 Generating...';
+				
+				// Show status
+				status.style.display = 'block';
+				results.style.display = 'none';
+				progressBar.style.width = '0%';
+				statusText.textContent = 'Generating test video...';
+				statusText.style.color = '#10b981';
+				frameCountIndicator.textContent = '';
+
+				try {
+					// Clear cache to ensure we use the latest audio file
+					clearTestAudioCache();
+					
+					// Create browser video generator
+					const videoGenerator = new BrowserVideoGenerator();
+					
+					// Get or create the pre-built test audio file
+					statusText.textContent = cachedTestAudioFile ? 'Using cached test audio...' : 'Loading test audio file...';
+					const testAudioFile = await getTestAudioFile();
+					
+					// Analyze the test audio file to create audio context and get proper analysis
+					statusText.textContent = 'Analyzing test audio...';
+					const audioAnalysis = await videoGenerator.analyzeAudio(testAudioFile);
+					console.log('Test audio analysis complete:', audioAnalysis);
+					
+					// Pre-configured settings
+					const title = 'Test Video - Browser Generated';
+					const guest = 'Demo Guest';
+					const sponsor = 'Demo Sponsor';
+					const stylePreset = "'80s Retro Chromatic"; // Use exact style preset name
+					
+					// Generate video
+					statusText.textContent = 'Generating test video frames...';
+					stageIndicator.textContent = 'Stage 1: Frame Generation';
+					
+					const videoBlob = await videoGenerator.generateVideo(audioAnalysis, stylePreset, (frame, total) => {
+						const percentage = (frame / total) * 100;
+						progressBar.style.width = `${percentage}%`;
+						const progressText = progressBar.querySelector('div');
+						if (progressText) progressText.textContent = `${Math.round(percentage)}%`;
+						frameCountIndicator.textContent = `Frames: ${frame} / ${total}`;
+					}, testAudioFile);
+					
+					// Add overlays
+					statusText.textContent = 'Adding test overlays...';
+					stageIndicator.textContent = 'Stage 2: Adding Overlays';
+					const finalVideoBlob = await videoGenerator.addOverlays(videoBlob, title, guest, sponsor);
+					
+					// Create download link
+					currentVideoUrl = URL.createObjectURL(finalVideoBlob);
+					currentVideoPath = 'test-video-browser-generated.webm';
+					
+					// Show results
+					statusText.textContent = 'Test video generation complete!';
+					stageIndicator.textContent = 'Complete!';
+					statusText.style.color = '#10b981';
+					progressBar.style.width = '100%';
+					const progressText = progressBar.querySelector('div');
+					if (progressText) progressText.textContent = '100%';
+					
+					showResults({
+						duration: audioAnalysis.duration,
+						videoPath: currentVideoPath
+					});
+					
+					console.log('✅ Test video generated successfully');
+					
+				} catch (error) {
+					console.log('Error generating test video:', error);
+					statusText.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
+					statusText.style.color = '#ef4444';
+					frameCountIndicator.textContent = 'Test video generation failed';
+				} finally {
+					// Re-enable button
+					testVideoRetro.disabled = false;
+					testVideoRetro.textContent = '🎬 80s Retro Chromatic';
+				}
+			});
+
+			testVideoWineCountry.addEventListener('click', async () => {
+				console.log('Test video button clicked');
+				
+				// Disable button during generation
+				testVideoWineCountry.disabled = true;
+				testVideoWineCountry.textContent = '🎬 Generating...';
+				
+				// Show status
+				status.style.display = 'block';
+				results.style.display = 'none';
+				progressBar.style.width = '0%';
+				statusText.textContent = 'Generating test video...';
+				statusText.style.color = '#10b981';
+				frameCountIndicator.textContent = '';
+
+				try {
+					// Clear cache to ensure we use the latest audio file
+					clearTestAudioCache();
+					
+					// Create browser video generator
+					const videoGenerator = new BrowserVideoGenerator();
+					
+					// Get or create the pre-built test audio file
+					statusText.textContent = cachedTestAudioFile ? 'Using cached test audio...' : 'Loading test audio file...';
+					const testAudioFile = await getTestAudioFile();
+					
+					// Analyze the test audio file to create audio context and get proper analysis
+					statusText.textContent = 'Analyzing test audio...';
+					const audioAnalysis = await videoGenerator.analyzeAudio(testAudioFile);
+					console.log('Test audio analysis complete:', audioAnalysis);
+					
+					// Pre-configured settings
+					const title = 'Test Video - Browser Generated';
+					const guest = 'Demo Guest';
+					const sponsor = 'Demo Sponsor';
+					const stylePreset = 'Wine-Country Dreamscape'; // Default to Wine-Country Dreamscape for testing
+					
+					// Generate video
+					statusText.textContent = 'Generating test video frames...';
+					stageIndicator.textContent = 'Stage 1: Frame Generation';
+					
+					const videoBlob = await videoGenerator.generateVideo(audioAnalysis, stylePreset, (frame, total) => {
+						const percentage = (frame / total) * 100;
+						progressBar.style.width = `${percentage}%`;
+						const progressText = progressBar.querySelector('div');
+						if (progressText) progressText.textContent = `${Math.round(percentage)}%`;
+						frameCountIndicator.textContent = `Frames: ${frame} / ${total}`;
+					}, testAudioFile);
+					
+					// Add overlays
+					statusText.textContent = 'Adding test overlays...';
+					stageIndicator.textContent = 'Stage 2: Adding Overlays';
+					const finalVideoBlob = await videoGenerator.addOverlays(videoBlob, title, guest, sponsor);
+					
+					// Create download link
+					currentVideoUrl = URL.createObjectURL(finalVideoBlob);
+					currentVideoPath = 'test-video-browser-generated.webm';
+					
+					// Show results
+					statusText.textContent = 'Test video generation complete!';
+					stageIndicator.textContent = 'Complete!';
+					statusText.style.color = '#10b981';
+					progressBar.style.width = '100%';
+					const progressText = progressBar.querySelector('div');
+					if (progressText) progressText.textContent = '100%';
+					
+					showResults({
+						duration: audioAnalysis.duration,
+						videoPath: currentVideoPath
+					});
+					
+					console.log('✅ Test video generated successfully');
+					
+				} catch (error) {
+					console.log('Error generating test video:', error);
+					statusText.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
+					statusText.style.color = '#ef4444';
+					frameCountIndicator.textContent = 'Test video generation failed';
+				} finally {
+					// Re-enable button
+					testVideoWineCountry.disabled = false;
+					testVideoWineCountry.textContent = '🎬 Wine-Country Dreamscape';
 				}
 			});
 
