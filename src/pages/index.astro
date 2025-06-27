@@ -107,11 +107,16 @@
 
 			<div id="status" style="margin-top: 2em; display: none;">
 				<h3>Processing Status:</h3>
-				<div id="statusText" style="color: #10b981;"></div>
+				<div id="statusText" style="color: #10b981; font-weight: 500; margin-bottom: 0.5em;"></div>
+				<div id="stageIndicator" style="color: #6366f1; font-size: 0.9em; margin-bottom: 1em;"></div>
 				<div id="progress" style="margin-top: 1em;">
-					<div id="progressBar" style="width: 0%; height: 20px; background: #6366f1; border-radius: 10px; transition: width 0.3s;"></div>
+					<div style="background: #1f1f23; height: 20px; border-radius: 10px; overflow: hidden; position: relative;">
+						<div id="progressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #6366f1, #8b5cf6); border-radius: 10px; transition: width 0.5s ease; position: relative;">
+							<div style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: white; font-size: 0.8em; font-weight: 500; text-shadow: 0 1px 2px rgba(0,0,0,0.5);"></div>
+						</div>
+					</div>
 				</div>
-				<div id="frameCountIndicator" style="margin-top: 0.5em; color: #aaa;"></div>
+				<div id="frameCountIndicator" style="margin-top: 0.5em; color: #aaa; font-size: 0.9em;"></div>
 			</div>
 
 			<div id="results" style="margin-top: 2em; display: none;">
@@ -133,20 +138,19 @@
 		</main>
 
 		<script>
+			console.log('SCRIPT LOADED');
 			const form = document.getElementById('uploadForm') as HTMLFormElement;
 			const fileInput = document.getElementById('audioFile') as HTMLInputElement;
 			const fileInfo = document.getElementById('fileInfo') as HTMLDivElement;
 			const status = document.getElementById('status') as HTMLDivElement;
 			const statusText = document.getElementById('statusText') as HTMLDivElement;
+			const stageIndicator = document.getElementById('stageIndicator') as HTMLDivElement;
 			const progressBar = document.getElementById('progressBar') as HTMLDivElement;
 			const results = document.getElementById('results') as HTMLDivElement;
 			const videoInfo = document.getElementById('videoInfo') as HTMLDivElement;
 			const downloadBtn = document.getElementById('downloadBtn') as HTMLButtonElement;
 			const youtubeBtn = document.getElementById('youtubeBtn') as HTMLButtonElement;
-			const frameCountIndicator = document.createElement('div');
-			frameCountIndicator.style.marginTop = '0.5em';
-			frameCountIndicator.style.color = '#aaa';
-			status.appendChild(frameCountIndicator);
+			const frameCountIndicator = document.getElementById('frameCountIndicator') as HTMLDivElement;
 
 			let currentVideoPath: string = '';
 			let currentVideoUrl: string = '';
@@ -170,57 +174,79 @@
 
 			// Form submission
 			form.addEventListener('submit', async (e) => {
+				console.log('Form submitted!');
 				e.preventDefault();
 				
 				const formData = new FormData(form);
 				const file = fileInput.files?.[0];
 				
 				if (!file) {
+					console.log('No file selected');
 					alert('Please select an audio file');
 					return;
 				}
 
 				if (file.size > 250 * 1024 * 1024) {
+					console.log('File too large');
 					alert('File size exceeds 250MB limit');
 					return;
 				}
 
-				// Show status
 				status.style.display = 'block';
 				results.style.display = 'none';
 				progressBar.style.width = '0%';
-				statusText.textContent = 'Uploading and processing...';
+				statusText.textContent = 'Uploading audio file...';
 				statusText.style.color = '#10b981';
+				frameCountIndicator.textContent = '';
 				
 				try {
-					// Upload to backend
+					console.log('Uploading to backend...');
 					const response = await fetch('/api/upload', {
 						method: 'POST',
 						body: formData
 					});
+					console.log('Upload response received');
+					
+					if (!response.ok) {
+						console.log('Upload failed:', response.status, response.statusText);
+						throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+					}
+					
 					const result = await response.json();
-					if (!result.success) throw result.error || 'Unknown error';
+					console.log('Upload result:', result);
+
+					if (!result.success) {
+						console.log('Upload not successful:', result.error);
+						throw new Error(result.error || 'Upload failed');
+					}
 
 					currentJobId = result.jobId;
 					currentVideoPath = '';
 					currentVideoUrl = '';
 
-					// Poll for frame progress
+					statusText.textContent = 'Audio uploaded successfully! Starting video generation...';
+					frameCountIndicator.textContent = 'Job ID: ' + currentJobId;
+
+					console.log('About to call pollFrameProgress', currentJobId);
+
 					await pollFrameProgress(currentJobId);
 
 					// Poll for job result
 					const jobResult = await pollJobResult(currentJobId);
 					if (jobResult.success) {
 						currentVideoPath = jobResult.videoPath;
-						currentVideoUrl = jobResult.videoPath.replace(process.cwd(), '').replace(/^\/+/, '/');
+						currentVideoUrl = `/api/download?file=${encodeURIComponent(jobResult.videoPath.split('/').pop() || 'video.mp4')}`;
 						showResults(jobResult);
 					} else {
-						statusText.textContent = `Error: ${jobResult.error || 'Unknown error'}`;
+						statusText.textContent = `Error: ${jobResult.error || 'Video generation failed'}`;
 						statusText.style.color = '#ef4444';
+						frameCountIndicator.textContent = 'Please try again or contact support';
 					}
 				} catch (error) {
-					statusText.textContent = `Error: ${error}`;
+					console.log('Error in form submit handler:', error);
+					statusText.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
 					statusText.style.color = '#ef4444';
+					frameCountIndicator.textContent = 'Please check your file and try again';
 				}
 			});
 
@@ -283,39 +309,112 @@
 			});
 
 			async function pollFrameProgress(jobId: string) {
-				statusText.textContent = 'Generating video frames...';
+				console.log('Calling pollFrameProgress', jobId);
+				statusText.textContent = 'Starting video generation...';
+				stageIndicator.textContent = 'Stage 1: Audio Analysis & Frame Generation';
 				progressBar.style.width = '0%';
+				const progressText = progressBar.querySelector('div');
+				if (progressText) progressText.textContent = '0%';
 				frameCountIndicator.textContent = '';
-				let done = false;
-				while (!done) {
+				
+				let attempts = 0;
+				const maxAttempts = 300; // 5 minutes max
+				
+				while (attempts < maxAttempts) {
 					await new Promise(resolve => setTimeout(resolve, 1000));
-					const res = await fetch(`/api/progress?jobId=${encodeURIComponent(jobId)}`);
-					if (res.ok) {
-						const { currentFrame, totalFrames } = await res.json();
-						frameCountIndicator.textContent = `Frames generated: ${currentFrame} / ${totalFrames}`;
-						progressBar.style.width = `${(currentFrame / totalFrames) * 100}%`;
-						if (currentFrame >= totalFrames) {
-							done = true;
-							statusText.textContent = 'Processing complete!';
-							statusText.style.color = '#10b981';
-							progressBar.style.width = '100%';
+					attempts++;
+					
+					try {
+						console.log('Polling /api/progress for jobId:', jobId);
+						const res = await fetch(`/api/progress?jobId=${encodeURIComponent(jobId)}`);
+						console.log('Progress API response:', res);
+						
+						if (res.ok) {
+							const progress = await res.json();
+							console.log('[PROGRESS POLL]', progress);
+							
+							if (progress.currentFrame !== undefined && progress.totalFrames !== undefined) {
+								const percentage = (progress.currentFrame / progress.totalFrames) * 100;
+								progressBar.style.width = `${percentage}%`;
+								if (progressText) progressText.textContent = `${Math.round(percentage)}%`;
+								console.log('[PROGRESS BAR UPDATE]', percentage, progressBar.style.width);
+								progressBar.style.display = 'block'; // Ensure visible
+								progressBar.offsetWidth; // Force reflow
+								
+								// Update status based on progress
+								if (progress.currentFrame === 0) {
+									statusText.textContent = 'Analyzing audio and preparing frames...';
+									stageIndicator.textContent = 'Stage 1: Audio Analysis & Frame Generation';
+								} else if (progress.currentFrame < progress.totalFrames) {
+									statusText.textContent = `Generating video frames... (${Math.round(percentage)}%)`;
+									stageIndicator.textContent = 'Stage 1: Audio Analysis & Frame Generation';
+									frameCountIndicator.textContent = `Frames: ${progress.currentFrame} / ${progress.totalFrames}`;
+								} else {
+									statusText.textContent = 'Frames complete! Adding overlays...';
+									stageIndicator.textContent = 'Stage 2: Adding Overlays & Finalizing';
+									progressBar.style.width = '100%';
+									if (progressText) progressText.textContent = '100%';
+									frameCountIndicator.textContent = `All ${progress.totalFrames} frames generated`;
+									break;
+								}
+							} else {
+								statusText.textContent = 'Processing started...';
+								stageIndicator.textContent = 'Stage 1: Audio Analysis & Frame Generation';
+								frameCountIndicator.textContent = 'Waiting for frame generation to begin...';
+							}
+						} else {
+							console.log('Progress API not ok:', res.status, res.statusText);
+							frameCountIndicator.textContent = 'Waiting for progress...';
 						}
-					} else {
-						frameCountIndicator.textContent = 'Waiting for progress...';
+					} catch (error) {
+						console.log('Error in pollFrameProgress:', error);
+						frameCountIndicator.textContent = 'Error polling progress';
+						break;
 					}
+				}
+				
+				if (attempts >= maxAttempts) {
+					throw new Error('Processing timeout - job took too long');
 				}
 			}
 
 			async function pollJobResult(jobId: string) {
-				let result = null;
-				while (!result) {
-					await new Promise(resolve => setTimeout(resolve, 1000));
-					const res = await fetch(`/api/job-result?jobId=${encodeURIComponent(jobId)}`);
-					if (res.status === 200) {
-						result = await res.json();
+				statusText.textContent = 'Finalizing video...';
+				stageIndicator.textContent = 'Stage 2: Adding Overlays & Finalizing';
+				frameCountIndicator.textContent = 'Adding overlays and generating thumbnail...';
+				
+				let attempts = 0;
+				const maxAttempts = 60; // 1 minute max
+				
+				while (attempts < maxAttempts) {
+					await new Promise(resolve => setTimeout(resolve, 2000));
+					attempts++;
+					
+					try {
+						const res = await fetch(`/api/job-result?jobId=${encodeURIComponent(jobId)}`);
+						
+						if (res.status === 200) {
+							const result = await res.json();
+							statusText.textContent = 'Video generation complete!';
+							stageIndicator.textContent = 'Complete!';
+							statusText.style.color = '#10b981';
+							return result;
+						} else if (res.status === 404) {
+							statusText.textContent = 'Processing video...';
+							stageIndicator.textContent = 'Stage 2: Adding Overlays & Finalizing';
+							frameCountIndicator.textContent = `Finalizing... (attempt ${attempts}/${maxAttempts})`;
+						} else {
+							throw new Error(`Job result check failed: ${res.status}`);
+						}
+					} catch (error) {
+						console.error('Job result polling error:', error);
+						statusText.textContent = 'Processing in progress...';
+						stageIndicator.textContent = 'Stage 2: Adding Overlays & Finalizing';
+						frameCountIndicator.textContent = 'Checking completion...';
 					}
 				}
-				return result;
+				
+				throw new Error('Job completion timeout');
 			}
 		</script>
 	</body>

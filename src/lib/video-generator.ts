@@ -29,8 +29,18 @@ export function getFrameProgress(jobId: string): { currentFrame: number, totalFr
   const progressFile = getProgressFilePath(jobId);
   if (!existsSync(progressFile)) return null;
   try {
-    const [current, total] = readFileSync(progressFile, 'utf-8').split('/').map(Number);
-    console.log(`[DEBUG] Read progress for job ${jobId}: ${current}/${total}`);
+    let content = readFileSync(progressFile, 'utf-8').trim();
+    // Remove any non-numeric, non-slash characters (e.g., stray % or control chars)
+    content = content.replace(/[^0-9\/]/g, '');
+    console.log(`[DEBUG] Sanitized progress content for job ${jobId}: "${content}"`);
+    const match = content.match(/(\d+)\/(\d+)/);
+    if (!match) {
+      console.log(`[DEBUG] Failed to parse progress format for job ${jobId}: "${content}"`);
+      return null;
+    }
+    const current = parseInt(match[1], 10);
+    const total = parseInt(match[2], 10);
+    console.log(`[DEBUG] Parsed progress for job ${jobId}: ${current}/${total}`);
     return { currentFrame: current, totalFrames: total };
   } catch (e) {
     console.log(`[DEBUG] Failed to read progress for job ${jobId}:`, e);
@@ -131,14 +141,16 @@ export class VideoGenerator {
       }
       if (jobId) {
         const progressFile = getProgressFilePath(jobId);
-        writeFileSync(progressFile, `${frameIndex}/${totalFrames}`);
-        console.log(`[DEBUG] Wrote progress for job ${jobId}: ${frameIndex}/${totalFrames}`);
+        const progressContent = `${frameIndex}/${totalFrames}\n`;
+        writeFileSync(progressFile, progressContent);
+        console.log(`[DEBUG] Wrote progress for job ${jobId}: "${progressContent}" to ${progressFile}`);
       }
     }
     if (jobId) {
       const progressFile = getProgressFilePath(jobId);
-      writeFileSync(progressFile, `${totalFrames}/${totalFrames}`);
-      console.log(`[DEBUG] Wrote progress for job ${jobId}: ${totalFrames}/${totalFrames}`);
+      const finalProgressContent = `${totalFrames}/${totalFrames}\n`;
+      writeFileSync(progressFile, finalProgressContent);
+      console.log(`[DEBUG] Wrote final progress for job ${jobId}: "${finalProgressContent}" to ${progressFile}`);
     }
   }
 
