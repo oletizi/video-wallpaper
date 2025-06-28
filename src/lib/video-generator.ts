@@ -503,85 +503,96 @@ export class VideoGenerator {
   }
 
   private generateFrenchNewWaveElements(frameData: any, width: number, height: number): string {
-    const { rms, jumpCutIntensity, filmGrainIntensity, seed } = frameData;
+    const { rms, jumpCutIntensity, filmGrainIntensity, seed, time } = frameData;
     const elements = [];
     
-    // RMS-reactive geometric shapes with randomization
-    if (rms > 0.12) {
-      // High RMS: add sharp geometric elements
-      const baseNumShapes = Math.floor(2 + (rms * 4));
-      const numShapes = this.randomInt(seed, baseNumShapes - 1, baseNumShapes + 2);
+    // Add temporal variation to number of shapes
+    const baseNumShapes = Math.floor(2 + (rms * 4) + Math.sin(time * 0.5) * 2);
+    const numShapes = this.randomInt(seed, baseNumShapes - 2, baseNumShapes + 3);
+    
+    // Add temporal variation to shape properties
+    for (let i = 0; i < numShapes; i++) {
+      // Add temporal variation to position
+      const baseX = this.randomRange(seed + i * 100, width * 0.1, width * 0.9);
+      const baseY = this.randomRange(seed + i * 200, height * 0.1, height * 0.9);
+      const x = baseX + Math.sin(time * (i + 1)) * 20;
+      const y = baseY + Math.cos(time * (i + 2)) * 20;
       
-      for (let i = 0; i < numShapes; i++) {
-        // Randomize shape positions
-        const x = this.randomRange(seed + i * 100, width * 0.1, width * 0.9);
-        const y = this.randomRange(seed + i * 200, height * 0.1, height * 0.9);
-        const size = this.randomRange(seed + i * 300, 15, 25) + (rms * 60);
-        const opacity = this.randomRange(seed + i * 400, 0.3, 0.5) + (rms * 0.4);
-        
-        // Randomize shape types and properties
-        const shapeType = this.randomInt(seed + i * 500, 0, 3); // 0: triangle, 1: rectangle, 2: circle, 3: polygon
-        const threshold = this.randomRange(seed + i * 600, 0.15, 0.25);
-        
-        if (shapeType === 0) {
-          // Triangle
-          elements.push(`
-            <polygon 
-              points="${x-size},${y+size} ${x+size},${y+size} ${x},${y-size}" 
-              fill="${rms > threshold ? '#ffffff' : '#000000'}" 
-              opacity="${opacity}"
-              stroke="${rms > threshold ? '#000000' : '#ffffff'}"
-              stroke-width="${this.randomRange(seed + i * 700, 0.5, 2) + (rms * 2)}"
-            />
-          `);
-        } else if (shapeType === 1) {
-          // Rectangle
-          elements.push(`
-            <rect 
-              x="${x-size}" 
-              y="${y-size}" 
-              width="${size*2}" 
-              height="${size*2}" 
-              fill="${rms > threshold ? '#000000' : '#ffffff'}" 
-              opacity="${opacity}"
-              stroke="${rms > threshold ? '#ffffff' : '#000000'}"
-              stroke-width="${this.randomRange(seed + i * 700, 0.5, 2) + (rms * 2)}"
-            />
-          `);
-        } else if (shapeType === 2) {
-          // Circle
-          elements.push(`
-            <circle 
-              cx="${x}" 
-              cy="${y}" 
-              r="${size}" 
-              fill="${rms > threshold ? '#ffffff' : '#000000'}" 
-              opacity="${opacity}"
-              stroke="${rms > threshold ? '#000000' : '#ffffff'}"
-              stroke-width="${this.randomRange(seed + i * 700, 0.5, 2) + (rms * 2)}"
-            />
-          `);
-        } else {
-          // Polygon (star-like)
-          const points = [];
-          const numPoints = this.randomInt(seed + i * 800, 5, 8);
-          for (let j = 0; j < numPoints; j++) {
-            const angle = (j * 2 * Math.PI) / numPoints;
-            const radius = j % 2 === 0 ? size : size * 0.5;
-            const px = x + radius * Math.cos(angle);
-            const py = y + radius * Math.sin(angle);
-            points.push(`${px},${py}`);
-          }
-          elements.push(`
-            <polygon 
-              points="${points.join(' ')}" 
-              fill="${rms > threshold ? '#000000' : '#ffffff'}" 
-              opacity="${opacity}"
-              stroke="${rms > threshold ? '#ffffff' : '#000000'}"
-              stroke-width="${this.randomRange(seed + i * 700, 0.5, 2) + (rms * 2)}"
-            />
-          `);
+      // Add temporal variation to size and opacity
+      const baseSize = this.randomRange(seed + i * 300, 15, 25);
+      const size = baseSize + (rms * 60) + Math.sin(time * (i + 3)) * 10;
+      const opacity = this.randomRange(seed + i * 400, 0.3, 0.5) + (rms * 0.4) + Math.abs(Math.sin(time * (i + 4))) * 0.2;
+      
+      // Randomize shape types and properties
+      const shapeType = this.randomInt(seed + i * 500, 0, 3); // 0: triangle, 1: rectangle, 2: circle, 3: polygon
+      const threshold = this.randomRange(seed + i * 600, 0.15, 0.25);
+      
+      // Add temporal variation to colors
+      const isWhite = Math.sin(time * (i + 5)) > 0;
+      const fillColor = rms > threshold ? (isWhite ? '#ffffff' : '#000000') : (isWhite ? '#000000' : '#ffffff');
+      const strokeColor = rms > threshold ? (isWhite ? '#000000' : '#ffffff') : (isWhite ? '#ffffff' : '#000000');
+      
+      // Add temporal variation to stroke width
+      const strokeWidth = this.randomRange(seed + i * 700, 0.5, 2) + (rms * 2) + Math.abs(Math.sin(time * (i + 6))) * 2;
+      
+      if (shapeType === 0) {
+        // Triangle with temporal variation
+        elements.push(`
+          <polygon 
+            points="${x-size},${y+size} ${x+size},${y+size} ${x},${y-size}" 
+            fill="${fillColor}" 
+            opacity="${opacity}"
+            stroke="${strokeColor}"
+            stroke-width="${strokeWidth}"
+          />
+        `);
+      } else if (shapeType === 1) {
+        // Rectangle with temporal variation
+        elements.push(`
+          <rect 
+            x="${x-size}" 
+            y="${y-size}" 
+            width="${size*2}" 
+            height="${size*2}" 
+            fill="${fillColor}" 
+            opacity="${opacity}"
+            stroke="${strokeColor}"
+            stroke-width="${strokeWidth}"
+          />
+        `);
+      } else if (shapeType === 2) {
+        // Circle with temporal variation
+        elements.push(`
+          <circle 
+            cx="${x}" 
+            cy="${y}" 
+            r="${size}" 
+            fill="${fillColor}" 
+            opacity="${opacity}"
+            stroke="${strokeColor}"
+            stroke-width="${strokeWidth}"
+          />
+        `);
+      } else {
+        // Polygon (star-like) with temporal variation
+        const points = [];
+        const numPoints = this.randomInt(seed + i * 800, 5, 8);
+        for (let j = 0; j < numPoints; j++) {
+          const angle = (j * 2 * Math.PI) / numPoints;
+          const radius = j % 2 === 0 ? size : size * 0.5;
+          const px = x + radius * Math.cos(angle + time * (j + 7));
+          const py = y + radius * Math.sin(angle + time * (j + 8));
+          points.push(`${px},${py}`);
         }
+        elements.push(`
+          <polygon 
+            points="${points.join(' ')}" 
+            fill="${fillColor}" 
+            opacity="${opacity}"
+            stroke="${strokeColor}"
+            stroke-width="${strokeWidth}"
+          />
+        `);
       }
     }
     

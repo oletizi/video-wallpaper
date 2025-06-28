@@ -1301,8 +1301,13 @@
 					const videoStream = this.canvas.captureStream(fps);
 					
 					// If we have an audio file, add it to the stream
-					if (audioFile && this.audioContext && this.audioContext.state === 'running') {
+					if (audioFile) {
 						try {
+							// Create audio context if it doesn't exist
+							if (!this.audioContext) {
+								this.audioContext = new AudioContext();
+							}
+							
 							// Create audio element and load the audio file
 							const audioElement = document.createElement('audio');
 							audioElement.src = URL.createObjectURL(audioFile);
@@ -1313,6 +1318,11 @@
 							const audioSource = this.audioContext.createMediaElementSource(audioElement);
 							audioSource.connect(audioDestination);
 							audioSource.connect(this.audioContext.destination); // Also connect to speakers for monitoring
+							
+							// Wait for audio to load
+							await new Promise((resolve) => {
+								audioElement.addEventListener('loadeddata', resolve);
+							});
 							
 							// Combine video and audio streams
 							const combinedStream = new MediaStream([
